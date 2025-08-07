@@ -50,5 +50,8 @@ jobs:
     steps:
       - name: Simulate Deployment
         run: |
-          echo "Deploying subdomain: ${{ matrix.subdomain }} to environment: ${{ matrix.env }}"
+          echo "Deploying ${{ matrix.subdomain }} in ${{ matrix.env }}"
+          echo "Using AWS Account: ${{ matrix.account_id }}"
+          echo "Path: ${{ matrix.path }}"
+          echo "Using AWS Account: ${{ matrix.account_name }}"
           # Here you can call terraform, ansible, helm, etc.
