@@ -30,28 +30,14 @@ jobs:
         with:
           python-version: 3.x
 
-      - name: Generate Matrix JSON
+      - name: Generate Matrix
         id: build
         run: |
-          echo "Input subdomains: ${{ github.event.inputs.subdomains }}"
-          echo "Selected env: ${{ github.event.inputs.env }}"
-
           echo '${{ github.event.inputs.subdomains }}' > subdomains.json
 
-          python3 <<EOF > matrix.json
-import json
-
-with open("subdomains.json") as f:
-    subdomains = json.load(f)
-
-env = "${{ github.event.inputs.env }}"
-
-matrix = [{"subdomain": s, "env": env} for s in subdomains]
-print(json.dumps(matrix))
-EOF
-
-          echo "matrix-json=$(cat matrix.json)" >> "$GITHUB_OUTPUT"
-          cat matrix.json
+          MATRIX=$(python3 scripts/build_matrix.py '${{ github.event.inputs.subdomains }}' '${{ github.event.inputs.env }}')
+          echo "$MATRIX"
+          echo "matrix-json=$MATRIX" >> "$GITHUB_OUTPUT"
 
   run-subdomain-jobs:
     name: Deploy Each Subdomain in ${{ github.event.inputs.env }}
