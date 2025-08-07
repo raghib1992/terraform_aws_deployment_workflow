@@ -1,0 +1,21 @@
+name: Terraform Deployment
+
+on:
+  workflow_dispatch:
+    inputs:
+      matrix:
+        description: 'JSON list of list of tiers- like [["a","b"],["c","d"],["e"]]'
+        required: true
+
+jobs:
+  parse-and-build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+      
+      - name: Get array length and calculate element count
+        id: get-array-length
+        run: |
+          LENGTH=$(echo '${{ github.event.inputs.matrix }}' | jq '. | length')
+          echo "TOTAL_LENGTH=$LENGTH" >> "$GITHUB_OUTPUT"`
