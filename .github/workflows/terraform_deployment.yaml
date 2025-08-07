@@ -6,6 +6,10 @@ on:
       matrix:
         description: 'JSON list of list of tiers- like [["a","b"],["c","d"],["e"]]'
         required: true
+      currentLayer:
+        description: 'Current processing index of the array'
+        required: true
+        default: '1'
 
 jobs:
   parse-and-build:
@@ -18,5 +22,34 @@ jobs:
         id: get-array-length
         run: |
           LENGTH=$(echo '${{ github.event.inputs.matrix }}' | jq '. | length')
-          # echo "TOTAL_LENGTH=$LENGTH" >> "$GITHUB_OUTPUT"
-          echo "$LENGTH"
+          echo "TOTAL_LENGTH=$LENGTH" >> "$GITHUB_OUTPUT"
+          echo "$TOTAL_LENGTH"
+
+      - name: Parse current array and get paths and target accounts for applications
+        id: get-matrix
+        env:
+          # GITHUB_TOKEN: ${{ steps.get_token.outputs.token }}
+          PYTHONUNBUFFERED: "1"
+        run: |
+          applications='${{ github.event.inputs.matrix }}'                            # Payload of nested lists, like [["springboot-aircraft", "foobar", "..."]]
+
+          CURRENT_INDEX=$((${{ github.event.inputs.currentLayer }}-1))                # Index of the nested list item being processed
+          NEXT_LAYER=$((${{ github.event.inputs.currentLayer }} + 1))                 # Index of the next nested list item that will be processed in the next iteration
+          echo "NEXT_LAYER=$NEXT_LAYER" >> "$GITHUB_OUTPUT"                           # Persist the next later index, for downstream consumption
+          echo "$NEXT_LAYER"
+
+          CURRENT_ARRAY=$(echo "$applications" | jq ".[$CURRENT_INDEX] | tojson")     # Serializes the list of current applications to JSON
+          echo "$CURRENT_ARRAY"
+
+          echo "CURRENT_ARRAY=$CURRENT_ARRAY" >> "$GITHUB_OUTPUT"
+          echo "CURRENT_ARRAY=$CURRENT_ARRAY"
+
+          # echo subenvironment is ${{ github.event.inputs.subEnvironment }}
+          # echo tier is ${{ github.event.inputs.tier }}
+          
+          # # Use the Account Lookup script to build the application matrix
+          # SUB_ENV=$(echo "${{ github.event.inputs.subEnvironment }}" | sed 's/_.*//')
+          # application_matrix=$(python3 ./docs/scripts/account_lookup/account_lookup.py --env prod-control-tower --type ${{ github.event.inputs.type }} --app-list "$CURRENT_ARRAY" --subenv $SUB_ENV --tier ${{ github.event.inputs.tier }})
+        
+          # jq . <<< $application_matrix  # Pretty Print the application matrix JSON
+          # echo "APPLICATION_MATRIX=$application_matrix" >> "$GITHUB_OUTPUT"           # Persist the application matrix
