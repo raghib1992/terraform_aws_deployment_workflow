@@ -6,10 +6,52 @@ on:
       matrix:
         description: 'JSON list of list of tiers- like [["a","b"],["c","d"],["e"]]'
         required: true
+      type:
+        required: true
+        description: "Type of content to deployed"
+        type: choice
+        options:
+          - applications
+          - common-tier
+          - common-subenv
+          - public_load_balancers
+      tier:
+        description: 'Target Tier'     
+        required: true
+        type: choice
+        options:
+          - production
+          - non-production
+          - "null"
+      subEnvironment:
+        description: 'Sub-Environment to Target'
+        required: true
+      extraEnvironment:
+        description: 'Extra Environment within a Sub-Environment to Target'
+        required: true
+        default: 'null'
       currentLayer:
         description: 'Current processing index of the array'
         required: true
         default: '1'
+      auto-approve:
+        description: "Whether to auto-approve the apply or not"
+        type: choice
+        options:
+          - "true"
+          - "false"
+        required: true
+      update-sdlc:
+        description: "Whether to update sdlc"
+        type: choice
+        options:
+          - "false"
+          - "true"
+        required: true
+      targetResource:
+        description: 'Terraform Resource to Target'
+        required: false
+        default: 'null'
 
 jobs:
   parse-and-build:
@@ -38,18 +80,45 @@ jobs:
           echo "NEXT_LAYER=$NEXT_LAYER" >> "$GITHUB_OUTPUT"                           # Persist the next later index, for downstream consumption
           echo "$NEXT_LAYER"
 
-          CURRENT_ARRAY=$(echo "$applications" | jq ".[$CURRENT_INDEX] | tojson")     # Serializes the list of current applications to JSON
-          echo "$CURRENT_ARRAY"
+          CURRENT_ARRAY=$(echo "$applications" | jq ".[$CURRENT_INDEX] | tojson")     # Serializes the list of current applications to JSO`
 
           echo "CURRENT_ARRAY=$CURRENT_ARRAY" >> "$GITHUB_OUTPUT"
           echo "CURRENT_ARRAY=$CURRENT_ARRAY"
 
-          # echo subenvironment is ${{ github.event.inputs.subEnvironment }}
-          # echo tier is ${{ github.event.inputs.tier }}
+          echo subenvironment is ${{ github.event.inputs.subEnvironment }}
+          echo tier is ${{ github.event.inputs.tier }}
           
-          # # Use the Account Lookup script to build the application matrix
-          # SUB_ENV=$(echo "${{ github.event.inputs.subEnvironment }}" | sed 's/_.*//')
-          # application_matrix=$(python3 ./docs/scripts/account_lookup/account_lookup.py --env prod-control-tower --type ${{ github.event.inputs.type }} --app-list "$CURRENT_ARRAY" --subenv $SUB_ENV --tier ${{ github.event.inputs.tier }})
+          # Use the Account Lookup script to build the application matrix
+          SUB_ENV=$(echo "${{ github.event.inputs.subEnvironment }}" | sed 's/_.*//')
+          application_matrix=$(python3 ./docs/scripts/account_lookup/account_lookup.py --env prod-control-tower --type ${{ github.event.inputs.type }} --app-list "$CURRENT_ARRAY" --subenv $SUB_ENV --tier ${{ github.event.inputs.tier }})
         
-          # jq . <<< $application_matrix  # Pretty Print the application matrix JSON
-          # echo "APPLICATION_MATRIX=$application_matrix" >> "$GITHUB_OUTPUT"           # Persist the application matrix
+          jq . <<< $application_matrix  # Pretty Print the application matrix JSON
+          echo "APPLICATION_MATRIX=$application_matrix" >> "$GITHUB_OUTPUT"           # Persist the application matrix
+
+      - name: Get Environment
+        id: get-environment
+        run: |
+          ENV=$(echo "${{ github.event.inputs.subEnvironment }}" | tr -d '[:digit:]' | sed 's/_.*//')
+          echo "Setting Environment: $ENV"
+          echo "ENVIRONMENT=$ENV" >> "$GITHUB_OUTPUT"
+  
+  ##############################################
+  terraform-apply:
+    name: 🚀 ${{ matrix.application.Application }} ► ${{ matrix.application.AccountName }}
+    needs: parse-and-build
+    runs-on: ubuntu-latest
+    environment: ${{ needs.parse-and-build.outputs.environment }}
+    strategy:
+      fail-fast: false
+      matrix:
+        application: ${{fromJson(needs.parse-and-build.outputs.applicationMatrix)}}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Print Matrix Values
+        run: |
+          echo "Application: ${{ matrix.application.Application }}"
+          echo "Path: ${{ matrix.application.Path }}"
+          echo "AccountId: ${{ matrix.application.AccountId }}"
+          echo "AccountName: ${{ matrix.application.AccountName }}"
