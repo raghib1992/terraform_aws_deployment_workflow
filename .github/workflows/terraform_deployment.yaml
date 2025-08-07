@@ -18,4 +18,4 @@ jobs:
         id: get-array-length
         run: |
           LENGTH=$(echo '${{ github.event.inputs.matrix }}' | jq '. | length')
-          echo "TOTAL_LENGTH=$LENGTH" >> "$GITHUB_OUTPUT"`
+          echo "TOTAL_LENGTH=$LENGTH" >> "$GITHUB_OUTPUT"
