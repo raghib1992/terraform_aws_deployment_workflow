@@ -5,7 +5,7 @@ def get_account_info(env):
     # Map environment to AWS account details
     account_map = {
         "dev": {
-            "account_id": "111111111111",
+            "account_id": "271547279005",
             "account_name": "dev-account"
         },
         "qa": {

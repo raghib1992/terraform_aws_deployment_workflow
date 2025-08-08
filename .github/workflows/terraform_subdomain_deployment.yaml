@@ -15,6 +15,11 @@ on:
           - perf
         required: true
 
+permissions:
+  actions: write
+  id-token: write
+  contents: read
+
 jobs:
   generate-matrix:
     name: Generate Matrix
@@ -24,6 +29,14 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      # - name: Get GitHub Apps Token # This enables access to Terraform modules in internal/private repos
+      #   id: get_token
+      #   uses: tibdex/github-app-token@v1.7.0
+      #   with:
+      #     private_key: ${{ secrets.ORG_REPO_READ_PRIVATE_KEY }}
+      #     app_id: ${{ secrets.ORG_REPO_READ_APP_ID }}
+      #   # Doc: https://github.com/marketplace/actions/github-app-token
 
       - name: Setup Python
         uses: actions/setup-python@v5
@@ -48,6 +61,9 @@ jobs:
       matrix:
         include: ${{ fromJson(needs.generate-matrix.outputs.matrix-json) }}
     steps:
+      - name: Checkout-Code
+        uses: actions/checkout@v4
+
       - name: Simulate Deployment
         run: |
           echo "Deploying ${{ matrix.subdomain }} in ${{ matrix.env }}"
@@ -55,3 +71,36 @@ jobs:
           echo "Path: ${{ matrix.path }}"
           echo "Using AWS Account: ${{ matrix.account_name }}"
           # Here you can call terraform, ansible, helm, etc.
+
+      - name: Configure AWS Credentials for reading state
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          # role-to-assume: arn:aws:iam::${{ matrix.account_id }}:role/github-workflow-role-tf-ami-deployer
+          role-to-assume: arn:aws:iam::${{ matrix.account_id }}:role/github-actions-role
+          role-session-name: tf-ami-deployer-pipeline
+          aws-region: eu-north-1
+
+      - name: Test AWS Access
+        run: aws sts get-caller-identity
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3  
+        with:
+          terraform_version: "v1.12.2"
+
+      # - name: Enable Terraform Git actions to use Github Apps Token
+      #   uses: de-vri-es/setup-git-credentials@v2.0.9
+      #   with:
+      #     credentials: https://git:${{ steps.get_token.outputs.token }}@github.com
+      #   # Doc: https://maelvls.dev/gh-actions-with-tf-private-repo/
+
+      - name: Set Terraform Backend Key
+        run: |
+          terraform init -reconfigure \
+            -backend-config="bucket=poc-terraform-loc" \
+            -backend-config="key=poc/terraform.ftstate" \
+            -backend-config="region=eu-north-1" \
+            -backend-config="encrypt=true" \
+            -backend-config="use_lockfile=true"                       # Enable state locking =true"
+            # -backend-config="dynamodb_table=terraform-locks-dev"
+
