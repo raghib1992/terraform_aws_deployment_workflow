@@ -136,7 +136,7 @@ jobs:
           subdomain="${{ matrix.subdomain }}"
           terraform init -reconfigure \
             -backend-config="bucket=${{ steps.set-backend.outputs.bucket_name }}" \
-            -backend-config="key=/order/$subdomain/terraform.tfstate" \
+            -backend-config="key=order/$subdomain/terraform.tfstate" \
             -backend-config="region=eu-north-1" \
             -backend-config="encrypt=true" \
             -backend-config="use_lockfile=true"                       # Enable state locking =true"
