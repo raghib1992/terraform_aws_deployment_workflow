@@ -110,7 +110,8 @@ jobs:
               BUCKET_NAME="stg-green-statefile-terraform"
               ;;
             production)
-              BUCKET_NAME="production-statefile-terraform"
+              # BUCKET_NAME="production-statefile-terraform"
+              BUCKET_NAME="poc-terraform-loc"
               ;;
             *)
               echo "Unknown environment: ${{ github.event.inputs.env }}"
