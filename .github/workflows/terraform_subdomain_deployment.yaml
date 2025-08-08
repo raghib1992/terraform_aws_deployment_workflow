@@ -145,11 +145,12 @@ jobs:
 
       - name: Terraform Plan for ${{ matrix.subdomain }}
         run: |
+
           terraform plan \
             -out=plan.tfplan \
             -input=false \
             -no-color \
-            -var-file=${{ github.event.inputs.env}}/${{ matrix.subdomain }}.tfvars
+            -var-file=${{ github.event.inputs.env }}/${{ github.event.inputs.env }}.tfvars
 
           # Generate a colorized human-readable plan output
           terraform show -color plan.tfplan > plan-${{ matrix.subdomain }}.txt
