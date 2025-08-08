@@ -56,7 +56,7 @@ jobs:
           echo "$MATRIX"
           echo "matrix-json=$MATRIX" >> "$GITHUB_OUTPUT"
 
-  terraform-apply:
+  terraform-plan:
     name: Deploy ${{ matrix.subdomain }} Subdomain ► ${{ github.event.inputs.env }}
     runs-on: ubuntu-latest
     needs: generate-matrix
@@ -152,7 +152,7 @@ jobs:
             -var-file=${{ github.event.inputs.env }}/${{ github.event.inputs.env }}.tfvars
 
           # Generate a colorized human-readable plan output
-          terraform show plan.tfplan > plan-${{ matrix.subdomain }}.txt
+          terraform show plan.tfplan > plan-${{ matrix.subdomain }}.tfplan
           # terraform show -no-color plan.tfplan >> $GITHUB_STEP_SUMMARY
           terraform show -no-color plan.tfplan | grep -E '^  #|^Plan:' | while read -r line; do
             if [[ $line == *"will be created"* ]]; then
@@ -176,3 +176,29 @@ jobs:
         with:
           name: terraform-plan-${{ matrix.subdomain }}
           path: ${{ matrix.path }}/plan-${{ matrix.subdomain }}.txt
+
+      - name: Terraform Apply for ${{ matrix.subdomain }}
+        if: inputs.auto-approve == 'true'
+        id: apply
+        run: |
+          terraform apply -input=false -no-color plan-${{ matrix.subdomain }}.tfplan
+        working-directory: ${{ matrix.path }}
+
+
+  # terraform-apply:
+  #   name: Apply ${{ matrix.subdomain }} Subdomain ► ${{ github.event.inputs.env }}
+  #   runs-on: ubuntu-latest
+  #   needs: terraform-plan
+  #   steps:
+  #     - name: Checkout code
+  #       uses: actions/checkout@v4
+
+  #     - name: Setup Terraform
+  #       uses: hashicorp/setup-terraform@v3
+  #       with:
+  #         terraform_version: "v1.12.2"
+
+      # - name: Terraform Apply for ${{ matrix.subdomain }}
+      #   run: |
+      #     terraform apply -input=false plan.tfplan
+      #   working-directory: ${{ matrix.path }}
