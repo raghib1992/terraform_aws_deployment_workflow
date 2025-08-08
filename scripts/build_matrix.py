@@ -29,7 +29,7 @@ def get_account_info(env):
             "account_name": "staging-green-account"
         },
         "production": {
-            "account_id": "XXXXXXXXXXXX",
+            "account_id": "271547279005",
             "account_name": "production-account"
         }
     }
