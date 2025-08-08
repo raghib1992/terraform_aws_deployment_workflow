@@ -140,3 +140,19 @@ jobs:
             -backend-config="encrypt=true" \
             -backend-config="use_lockfile=true"                       # Enable state locking =true"
             # -backend-config="dynamodb_table=terraform-locks-dev"
+
+      - name: Terraform Plan for ${{ matrix.subdomain }}
+        run: |
+          terraform plan \
+            -out=plan.tfplan \
+            -input=false \
+            -no-color
+
+          # Generate a colorized human-readable plan output
+          terraform show -color plan.tfplan > plan-${{ matrix.subdomain }}.txt
+
+      - name: Upload Plan Output for ${{ matrix.subdomain }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: terraform-plan-${{ matrix.subdomain }}
+          path: plan-${{ matrix.subdomain }}.txt
