@@ -10,6 +10,7 @@ on:
         description: 'Target environment (dev, qa, perf)'
         type: choice
         options:
+          - sandbox
           - dev
           - qa
           - perf
@@ -52,8 +53,8 @@ jobs:
           echo "$MATRIX"
           echo "matrix-json=$MATRIX" >> "$GITHUB_OUTPUT"
 
-  run-subdomain-jobs:
-    name: Deploy Each Subdomain in ${{ github.event.inputs.env }}
+  terraform-apply:
+    name: Deploy ${{ matrix.subdomain }} Subdomain ► ${{ github.event.inputs.env }}
     runs-on: ubuntu-latest
     needs: generate-matrix
     strategy:
@@ -75,8 +76,8 @@ jobs:
       - name: Configure AWS Credentials for reading state
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          # role-to-assume: arn:aws:iam::${{ matrix.account_id }}:role/github-workflow-role-tf-ami-deployer
-          role-to-assume: arn:aws:iam::${{ matrix.account_id }}:role/github-actions-role
+          role-to-assume: arn:aws:iam::${{ matrix.account_id }}:role/github-workflow-role-tf-deployer
+          # role-to-assume: arn:aws:iam::${{ matrix.account_id }}:role/github-actions-role
           role-session-name: tf-ami-deployer-pipeline
           aws-region: eu-north-1
 
@@ -96,11 +97,11 @@ jobs:
 
       - name: Set Terraform Backend Key
         run: |
+          subdomain="${{ matrix.subdomain }}"
           terraform init -reconfigure \
-            -backend-config="bucket=poc-terraform-loc" \
-            -backend-config="key=poc/terraform.ftstate" \
+            -backend-config="bucket=shake-shack-terraform-statefile " \
+            -backend-config="key=/order/$subdomain/terraform.ftstate" \
             -backend-config="region=eu-north-1" \
             -backend-config="encrypt=true" \
             -backend-config="use_lockfile=true"                       # Enable state locking =true"
             # -backend-config="dynamodb_table=terraform-locks-dev"
-
