@@ -120,16 +120,16 @@ jobs:
           esac
           echo "bucket_name=$BUCKET_NAME" >> "$GITHUB_OUTPUT"
 
-            - name: Setup Terraform
-              uses: hashicorp/setup-terraform@v3  
-              with:
-                terraform_version: "v1.12.2"
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3  
+        with:
+          terraform_version: "v1.12.2"
 
-            # - name: Enable Terraform Git actions to use Github Apps Token
-            #   uses: de-vri-es/setup-git-credentials@v2.0.9
-            #   with:
-            #     credentials: https://git:${{ steps.get_token.outputs.token }}@github.com
-            #   # Doc: https://maelvls.dev/gh-actions-with-tf-private-repo/
+      # - name: Enable Terraform Git actions to use Github Apps Token
+      #   uses: de-vri-es/setup-git-credentials@v2.0.9
+      #   with:
+      #     credentials: https://git:${{ steps.get_token.outputs.token }}@github.com
+      #   # Doc: https://maelvls.dev/gh-actions-with-tf-private-repo/
 
       - name: Set Terraform Backend Key
         run: |
@@ -147,10 +147,13 @@ jobs:
           terraform plan \
             -out=plan.tfplan \
             -input=false \
-            -no-color
+            -no-color \
+            -var-file=${{ github.events.inputs.env}}/${{ matrix.subdomain }}.tfvars
 
           # Generate a colorized human-readable plan output
           terraform show -color plan.tfplan > plan-${{ matrix.subdomain }}.txt
+        working-directory: ${{ matrix.path }}
+
 
       - name: Upload Plan Output for ${{ matrix.subdomain }}
         uses: actions/upload-artifact@v4
