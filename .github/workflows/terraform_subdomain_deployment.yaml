@@ -153,7 +153,21 @@ jobs:
 
           # Generate a colorized human-readable plan output
           terraform show plan.tfplan > plan-${{ matrix.subdomain }}.txt
-          terraform show -no-color plan.tfplan >> $GITHUB_STEP_SUMMARY
+          # terraform show -no-color plan.tfplan >> $GITHUB_STEP_SUMMARY
+          terraform show -no-color plan.tfplan | grep -E '^  #|^Plan:' | while read -r line; do
+            if [[ $line == *"will be created"* ]]; then
+              RESOURCE=$(echo "$line" | sed 's/^  # //' | sed 's/ will be created//')
+              echo "### ✅ $RESOURCE will be **created**" >> $GITHUB_STEP_SUMMARY
+            elif [[ $line == *"will be destroyed"* ]]; then
+              RESOURCE=$(echo "$line" | sed 's/^  # //' | sed 's/ will be destroyed//')
+              echo "### ❌ $RESOURCE will be **destroyed**" >> $GITHUB_STEP_SUMMARY
+            elif [[ $line == *"will be updated in-place"* ]]; then
+              RESOURCE=$(echo "$line" | sed 's/^  # //' | sed 's/ will be updated in-place//')
+              echo "### 🔁 $RESOURCE will be **updated**" >> $GITHUB_STEP_SUMMARY
+            elif [[ $line == Plan:* ]]; then
+              echo "**$line**" >> $GITHUB_STEP_SUMMARY
+            fi
+          done
         working-directory: ${{ matrix.path }}
 
 
