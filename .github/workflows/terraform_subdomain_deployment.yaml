@@ -175,7 +175,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: terraform-plan-${{ matrix.subdomain }}
-          path: ${{ matrix.path }}/plan-${{ matrix.subdomain }}.txt
+          path: ${{ matrix.path }}/plan-${{ matrix.subdomain }}.tfplan
 
       - name: Terraform Apply for ${{ matrix.subdomain }}
         if: inputs.auto-approve == 'true'
