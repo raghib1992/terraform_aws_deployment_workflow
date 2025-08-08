@@ -179,7 +179,6 @@ jobs:
           path: ${{ matrix.path }}/plan-${{ matrix.subdomain }}.tfplan
 
       - name: Terraform Apply for ${{ matrix.subdomain }}
-        if: inputs.auto-approve == 'true'
         id: apply
         run: |
           terraform apply -input=false -no-color plan-${{ matrix.subdomain }}.tfplan
