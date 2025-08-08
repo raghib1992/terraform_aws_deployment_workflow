@@ -141,6 +141,7 @@ jobs:
             -backend-config="encrypt=true" \
             -backend-config="use_lockfile=true"                       # Enable state locking =true"
             # -backend-config="dynamodb_table=terraform-locks-dev"
+        working-directory: ${{ matrix.path }}
 
       - name: Terraform Plan for ${{ matrix.subdomain }}
         run: |
@@ -148,7 +149,7 @@ jobs:
             -out=plan.tfplan \
             -input=false \
             -no-color \
-            -var-file=${{ github.events.inputs.env}}/${{ matrix.subdomain }}.tfvars
+            -var-file=${{ github.event.inputs.env}}/${{ matrix.subdomain }}.tfvars
 
           # Generate a colorized human-readable plan output
           terraform show -color plan.tfplan > plan-${{ matrix.subdomain }}.txt
