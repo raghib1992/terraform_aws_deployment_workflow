@@ -79,8 +79,8 @@ jobs:
       - name: Configure AWS Credentials for reading state
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: arn:aws:iam::${{ matrix.account_id }}:role/github-workflow-role-tf-deployer
-          # role-to-assume: arn:aws:iam::${{ matrix.account_id }}:role/github-actions-role
+          # role-to-assume: arn:aws:iam::${{ matrix.account_id }}:role/github-workflow-role-tf-deployer
+          role-to-assume: arn:aws:iam::${{ matrix.account_id }}:role/github-actions-role
           role-session-name: tf-ami-deployer-pipeline
           aws-region: eu-north-1
 
