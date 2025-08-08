@@ -60,6 +60,7 @@ jobs:
     name: Deploy ${{ matrix.subdomain }} Subdomain ► ${{ github.event.inputs.env }}
     runs-on: ubuntu-latest
     needs: generate-matrix
+    environment: "${{ github.event.inputs.env }}-approval"
     strategy:
       fail-fast: false
       matrix:
