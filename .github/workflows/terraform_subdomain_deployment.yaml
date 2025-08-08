@@ -153,7 +153,7 @@ jobs:
 
           # Generate a colorized human-readable plan output
           terraform show plan.tfplan > plan-${{ matrix.subdomain }}.txt
-          terraform show plan.tfplan >> $GITHUB_STEP_SUMMARY
+          terraform show -no-color plan.tfplan >> $GITHUB_STEP_SUMMARY
         working-directory: ${{ matrix.path }}
 
 
