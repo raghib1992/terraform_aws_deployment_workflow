@@ -13,7 +13,10 @@ on:
           - sandbox
           - dev
           - qa
-          - perf
+          - performance
+          - staging
+          - staging-green
+          - production
         required: true
 
 permissions:
@@ -84,16 +87,48 @@ jobs:
       - name: Test AWS Access
         run: aws sts get-caller-identity
 
-      - name: Setup Terraform
-        uses: hashicorp/setup-terraform@v3  
-        with:
-          terraform_version: "v1.12.2"
+      - name: Set Terraform Backend Bucket Name from Env
+        id: set-backend
+        run: |
+          case "${{ github.event.inputs.env }}" in
+            dev)
+              BUCKET_NAME="dev-statefile-terraform"
+              ;;
+            qa)
+              BUCKET_NAME="qa-statefile-terraform"
+              ;;
+            sandbox)
+              BUCKET_NAME="sandbox-statefile-terraform"
+              ;;
+            performance)
+              BUCKET_NAME="perf-statefile-terraform"
+              ;;
+            staging)
+              BUCKET_NAME="stg-statefile-terraform"
+              ;;
+            staging-green)
+              BUCKET_NAME="stg-green-statefile-terraform"
+              ;;
+            production)
+              BUCKET_NAME="production-statefile-terraform"
+              ;;
+            *)
+              echo "Unknown environment: ${{ github.event.inputs.env }}"
+              exit 1
+              ;;
+          esac
+          echo "bucket_name=$BUCKET_NAME" >> "$GITHUB_OUTPUT"
 
-      # - name: Enable Terraform Git actions to use Github Apps Token
-      #   uses: de-vri-es/setup-git-credentials@v2.0.9
-      #   with:
-      #     credentials: https://git:${{ steps.get_token.outputs.token }}@github.com
-      #   # Doc: https://maelvls.dev/gh-actions-with-tf-private-repo/
+            - name: Setup Terraform
+              uses: hashicorp/setup-terraform@v3  
+              with:
+                terraform_version: "v1.12.2"
+
+            # - name: Enable Terraform Git actions to use Github Apps Token
+            #   uses: de-vri-es/setup-git-credentials@v2.0.9
+            #   with:
+            #     credentials: https://git:${{ steps.get_token.outputs.token }}@github.com
+            #   # Doc: https://maelvls.dev/gh-actions-with-tf-private-repo/
 
       - name: Set Terraform Backend Key
         run: |

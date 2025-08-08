@@ -4,17 +4,33 @@ import json
 def get_account_info(env):
     # Map environment to AWS account details
     account_map = {
-        "dev": {
+        "sandbox": {
             "account_id": "271547279005",
+            "account_name": "dev-account"
+        },
+        "dev": {
+            "account_id": "XXXXXXXXXXXX",
             "account_name": "dev-account"
         },
         "qa": {
             "account_id": "222222222222",
             "account_name": "qa-account"
         },
-        "perf": {
+        "performance": {
             "account_id": "333333333333",
-            "account_name": "perf-account"
+            "account_name": "performance-account"
+        },
+        "staging": {
+            "account_id": "XXXXXXXXXXXX",
+            "account_name": "staging-account"
+        },
+        "staging-green": {
+            "account_id": "XXXXXXXXXXXX",
+            "account_name": "staging-green-account"
+        },
+        "production": {
+            "account_id": "XXXXXXXXXXXX",
+            "account_name": "production-account"
         }
     }
     # Fallback if env not found
