@@ -248,6 +248,8 @@ jobs:
           # IMPORTANT: apply the **binary** plan
           # terraform apply -input=false -no-color plan-${{ matrix.subdomain }}.tfplan
           ls -l
+          cd plan-${{ matrix.subdomain }}.tfplan
+          ls -l
           pwd
           cd ..
           ls -l
