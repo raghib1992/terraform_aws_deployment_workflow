@@ -153,7 +153,7 @@ jobs:
             -var-file=${{ github.event.inputs.env }}/${{ github.event.inputs.env }}.tfvars
 
           # Generate a colorized human-readable plan output
-          terraform show plan.tfplan > plan-${{ matrix.subdomain }}.out
+          terraform show plan.tfplan > plan-${{ matrix.subdomain }}.txt
           # terraform show -no-color plan.tfplan >> $GITHUB_STEP_SUMMARY
           terraform show -no-color plan.tfplan | grep -E '^  #|^Plan:' | while read -r line; do
             if [[ $line == *"will be created"* ]]; then
@@ -176,29 +176,74 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: terraform-plan-${{ matrix.subdomain }}
-          path: ${{ matrix.path }}/plan-${{ matrix.subdomain }}.out
+          path: |
+            ${{ matrix.path }}/plan-${{ matrix.subdomain }}.tfplan
+            ${{ matrix.path }}/${{ github.event.inputs.env }}/${{ github.event.inputs.env }}.tfvars
+          if-no-files-found: error
 
-      # - name: Terraform Apply for ${{ matrix.subdomain }}
-      #   id: apply
-      #   run: |
-      #     terraform apply -input=false -no-color plan-${{ matrix.subdomain }}.out
-      #   working-directory: ${{ matrix.path }}
+  terraform-apply:
+    name: Apply ► ${{ matrix.subdomain }} @ ${{ github.event.inputs.env }}
+    runs-on: ubuntu-latest
+    needs: terraform-plan
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJson(needs.generate-matrix.outputs.matrix-json) }}
+    # Per-subdomain approval AFTER plan:
+    environment: "${{ github.event.inputs.env }}-approval"
+    # Avoid state corruption if someone re-triggers:
+    concurrency:
+      group: tf-${{ github.event.inputs.env }}-${{ matrix.account_id }}-${{ matrix.subdomain }}
+      cancel-in-progress: false
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
 
+      - name: Configure AWS Credentials (apply)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::${{ matrix.account_id }}:role/github-actions-role
+          role-session-name: tf-apply-session
+          aws-region: eu-north-1
 
-  # terraform-apply:
-  #   name: Apply ${{ matrix.subdomain }} Subdomain ► ${{ github.event.inputs.env }}
-  #   runs-on: ubuntu-latest
-  #   needs: terraform-plan
-  #   steps:
-  #     - name: Checkout code
-  #       uses: actions/checkout@v4
+      - name: Set TF backend bucket
+        id: set-backend
+        run: |
+          case "${{ github.event.inputs.env }}" in
+            dev) BUCKET="dev-statefile-terraform" ;;
+            qa) BUCKET="qa-statefile-terraform" ;;
+            sandbox) BUCKET="sandbox-statefile-terraform" ;;
+            performance) BUCKET="perf-statefile-terraform" ;;
+            staging) BUCKET="stg-statefile-terraform" ;;
+            staging-green) BUCKET="stg-green-statefile-terraform" ;;
+            production) BUCKET="poc-terraform-loc" ;;
+            *) echo "Unknown env"; exit 1 ;;
+          esac
+          echo "bucket_name=$BUCKET" >> "$GITHUB_OUTPUT"
 
-  #     - name: Setup Terraform
-  #       uses: hashicorp/setup-terraform@v3
-  #       with:
-  #         terraform_version: "v1.12.2"
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: v1.12.2
 
-      # - name: Terraform Apply for ${{ matrix.subdomain }}
-      #   run: |
-      #     terraform apply -input=false plan.tfplan
-      #   working-directory: ${{ matrix.path }}
+      - name: Terraform Init (same backend)
+        working-directory: ${{ matrix.path }}
+        run: |
+          terraform init -reconfigure \
+            -backend-config="bucket=${{ steps.set-backend.outputs.bucket_name }}" \
+            -backend-config="key=order/${{ matrix.subdomain }}/terraform.tfstate" \
+            -backend-config="region=eu-north-1" \
+            -backend-config="encrypt=true" \
+            -backend-config="use_lockfile=true"
+
+      - name: Download plan
+        uses: actions/download-artifact@v4
+        with:
+          name: tfplan-${{ matrix.subdomain }}
+          path: ${{ matrix.path }}
+      
+      - name: Terraform Apply (${{ matrix.subdomain }})
+        working-directory: ${{ matrix.path }}
+        run: |
+          # IMPORTANT: apply the **binary** plan
+          terraform apply -input=false -no-color plan-${{ matrix.subdomain }}.tfplan
