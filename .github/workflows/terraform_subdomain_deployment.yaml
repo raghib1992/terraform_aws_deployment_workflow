@@ -237,7 +237,7 @@ jobs:
       - name: Download plan
         uses: actions/download-artifact@v4
         with:
-          name: tfplan-${{ matrix.subdomain }}
+          name: terraform-plan-${{ matrix.subdomain }}
           path: ${{ matrix.path }}
       
       - name: Terraform Apply (${{ matrix.subdomain }})
