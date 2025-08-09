@@ -69,7 +69,7 @@ jobs:
       - name: Checkout-Code
         uses: actions/checkout@v4
 
-      - name: Simulate Deployment
+      - name: Print Deployment Detailsß
         run: |
           echo "Deploying ${{ matrix.subdomain }} in ${{ matrix.env }}"
           echo "Using AWS Account: ${{ matrix.account_id }}"
@@ -178,11 +178,11 @@ jobs:
           name: terraform-plan-${{ matrix.subdomain }}
           path: ${{ matrix.path }}/plan-${{ matrix.subdomain }}.out
 
-      - name: Terraform Apply for ${{ matrix.subdomain }}
-        id: apply
-        run: |
-          terraform apply -input=false -no-color plan-${{ matrix.subdomain }}.out
-        working-directory: ${{ matrix.path }}
+      # - name: Terraform Apply for ${{ matrix.subdomain }}
+      #   id: apply
+      #   run: |
+      #     terraform apply -input=false -no-color plan-${{ matrix.subdomain }}.out
+      #   working-directory: ${{ matrix.path }}
 
 
   # terraform-apply:
