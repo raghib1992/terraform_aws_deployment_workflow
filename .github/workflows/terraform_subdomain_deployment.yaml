@@ -246,4 +246,8 @@ jobs:
         working-directory: ${{ matrix.path }}
         run: |
           # IMPORTANT: apply the **binary** plan
-          terraform apply -input=false -no-color plan-${{ matrix.subdomain }}.tfplan
+          # terraform apply -input=false -no-color plan-${{ matrix.subdomain }}.tfplan
+          ls -l
+          pwd
+          cd ..
+          ls -l
