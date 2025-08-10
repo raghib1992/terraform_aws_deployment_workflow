@@ -60,24 +60,17 @@ jobs:
         id: build
         run: |
           SUBDOMAINS='${{ github.event.inputs.subdomains }}'
-          
-          # Trim whitespace
           TRIMMED=$(echo "$SUBDOMAINS" | tr -d '[:space:]')
-
           if [ -z "$TRIMMED" ]; then
-            # Empty → just use []
             MATRIX="[]"
           else
             echo '${{ github.event.inputs.subdomains }}' > subdomains.json
-
             MATRIX=$(python3 scripts/build_matrix.py '${{ github.event.inputs.subdomains }}' '${{ github.event.inputs.env }}')
           fi
           echo "$MATRIX"
-
-          # Count safely
           COUNT=$(printf '%s' "$MATRIX" | jq 'length')
-          echo "matrix-json=$MATRIX" >> "$GITHUB_OUTPUT"
-          echo "matrix-count=$COUNT"  >> "$GITHUB_OUTPUT"
+          echo "matrix-json=$MATRIX"  >> "$GITHUB_OUTPUT"
+          echo "matrix-count=$COUNT" >> "$GITHUB_OUTPUT"
 
   terraform-plan:
     name: Deploy ${{ matrix.subdomain }} Subdomain ► ${{ github.event.inputs.env }}
