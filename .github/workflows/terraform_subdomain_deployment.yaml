@@ -384,7 +384,7 @@ jobs:
   plan-common-only:
     name: Plan ► common-only @ ${{ github.event.inputs.env }}
     runs-on: ubuntu-latest
-    if: ${{ github.event.inputs.deploy_common == 'true' || needs.generate-matrix.outputs.matrix-count == '0' }}
+    if: ${{ github.event.inputs.deploy_common == 'true' || needs.generate-matrix.outputs.matrix-count == 0 }}
     needs: [generate-matrix]
     steps:
       - name: Checkout code
