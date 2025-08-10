@@ -37,6 +37,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       matrix-json: ${{ steps.build.outputs.matrix-json }}
+      matrix-count: ${{ steps.build.outputs.matrix-count }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -74,7 +75,7 @@ jobs:
 
   terraform-plan:
     name: Deploy ${{ matrix.subdomain }} Subdomain ► ${{ github.event.inputs.env }}
-    if: ${{ needs.generate-matrix.outputs.matrix-count != '0' }}
+    if: ${{ needs.generate-matrix.outputs.matrix-count > 0 }}
     runs-on: ubuntu-latest
     needs: generate-matrix
     strategy:
@@ -199,7 +200,7 @@ jobs:
 
   terraform-apply:
     name: Apply ► ${{ matrix.subdomain }} @ ${{ github.event.inputs.env }}
-    if: ${{ needs.generate-matrix.outputs.matrix-count != '0' }}
+    if: ${{ needs.generate-matrix.outputs.matrix-count > 0 }}
     runs-on: ubuntu-latest
     needs: [generate-matrix, terraform-plan]   # <-- add generate-matrix here
     strategy:
@@ -279,7 +280,7 @@ jobs:
   plan-common:
     name: Plan ► common @ ${{ github.event.inputs.env }}
     runs-on: ubuntu-latest
-    if: ${{ github.event.inputs.deploy_common == 'true' || needs.generate-matrix.outputs.matrix-count != '0' }}
+    if: ${{ github.event.inputs.deploy_common == 'true' || needs.generate-matrix.outputs.matrix-count > 0 }}
     needs: [generate-matrix, terraform-apply]
     steps:
       - name: Checkout code
