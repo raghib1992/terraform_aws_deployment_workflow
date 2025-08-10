@@ -5,10 +5,12 @@ on:
     inputs:
       subdomains:
         description: 'JSON list of subdomains (e.g. ["basket", "order-management"])'
-        required: true
+        type: string
+        # required: true
       env:
-        description: 'Target environment (dev, qa, perf)'
+        description: 'Target environment'
         type: choice
+        default: production
         options:
           - sandbox
           - dev
@@ -57,14 +59,29 @@ jobs:
       - name: Generate Matrix
         id: build
         run: |
-          echo '${{ github.event.inputs.subdomains }}' > subdomains.json
+          SUBDOMAINS='${{ github.event.inputs.subdomains }}'
+          
+          # Trim whitespace
+          TRIMMED=$(echo "$SUBDOMAINS" | tr -d '[:space:]')
 
-          MATRIX=$(python3 scripts/build_matrix.py '${{ github.event.inputs.subdomains }}' '${{ github.event.inputs.env }}')
+          if [ -z "$TRIMMED" ]; then
+            # Empty → just use []
+            MATRIX="[]"
+          else
+            echo '${{ github.event.inputs.subdomains }}' > subdomains.json
+
+            MATRIX=$(python3 scripts/build_matrix.py '${{ github.event.inputs.subdomains }}' '${{ github.event.inputs.env }}')
+          fi
           echo "$MATRIX"
+
+          # Count safely
+          COUNT=$(printf '%s' "$MATRIX" | jq 'length')
           echo "matrix-json=$MATRIX" >> "$GITHUB_OUTPUT"
+          echo "matrix-count=$COUNT"  >> "$GITHUB_OUTPUT"
 
   terraform-plan:
     name: Deploy ${{ matrix.subdomain }} Subdomain ► ${{ github.event.inputs.env }}
+    if: ${{ needs.generate-matrix.outputs.matrix-count != '0' }}
     runs-on: ubuntu-latest
     needs: generate-matrix
     strategy:
@@ -189,6 +206,7 @@ jobs:
 
   terraform-apply:
     name: Apply ► ${{ matrix.subdomain }} @ ${{ github.event.inputs.env }}
+    if: ${{ needs.generate-matrix.outputs.matrix-count != '0' }}
     runs-on: ubuntu-latest
     needs: [generate-matrix, terraform-plan]   # <-- add generate-matrix here
     strategy:
@@ -264,10 +282,11 @@ jobs:
           # IMPORTANT: apply the **binary** plan
           test -f "plan-${{ matrix.subdomain }}.tfplan" || { echo "Plan file missing"; exit 1; }
           terraform apply -input=false -no-color plan-${{ matrix.subdomain }}.tfplan
+
   plan-common:
     name: Plan ► common @ ${{ github.event.inputs.env }}
     runs-on: ubuntu-latest
-    if: ${{ github.event.inputs.deploy_common == 'true' }}
+    if: ${{ github.event.inputs.deploy_common == 'true' || needs.generate-matrix.outputs.matrix-count != '0' }}
     needs: [generate-matrix, terraform-apply]
     steps:
       - name: Checkout code
@@ -367,3 +386,106 @@ jobs:
           name: terraform-plan-common
           path: ./common/plan-common.tfplan
           if-no-files-found: error
+
+  plan-common-only:
+    name: Plan ► common-only @ ${{ github.event.inputs.env }}
+    runs-on: ubuntu-latest
+    if: ${{ github.event.inputs.deploy_common == 'true' || needs.generate-matrix.outputs.matrix-count == '0' }}
+    needs: [generate-matrix]
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref_name }}
+      
+      - name: Set TF backend bucket
+        id: set-backend
+        run: |
+          case "${{ github.event.inputs.env }}" in
+            dev) 
+              BUCKET="dev-statefile-terraform" 
+              ACCOUNT_ID="254390148077"
+              ;;
+            qa) 
+              BUCKET="qa-statefile-terraform" 
+              ACCOUNT_ID="039871571616"
+              ;;
+            sandbox) 
+              BUCKET="sandbox-statefile-terraform" 
+              ACCOUNT_ID="800643485173"
+              ;;
+            performance) 
+              BUCKET="perf-statefile-terraform" 
+              ACCOUNT_ID="677977426648"
+              ;;
+            staging) 
+              BUCKET="stg-statefile-terraform" 
+              ACCOUNT_ID="649128807268"
+              ;;
+            staging-green) 
+              BUCKET="stg-green-statefile-terraform" 
+              ACCOUNT_ID="606184927985"
+              ;;
+            production) 
+              BUCKET="poc-terraform-loc" 
+              ACCOUNT_ID="271547279005"
+              ;;
+            *) echo "Unknown env"; exit 1 ;;
+          esac
+          echo "bucket_name=$BUCKET" >> "$GITHUB_OUTPUT"
+          echo "account_id=$ACCOUNT_ID" >> "$GITHUB_OUTPUT"
+
+      - name: Configure AWS Credentials (plan)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::${{ steps.set-backend.outputs.account_id }}:role/github-actions-role
+          role-session-name: tf-plan-session
+          aws-region: eu-north-1
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: v1.12.2
+
+      - name: Terraform Init (same backend)
+        working-directory: ./common
+        run: |
+          terraform init -reconfigure \
+            -backend-config="bucket=${{ steps.set-backend.outputs.bucket_name }}" \
+            -backend-config="key=order/common/terraform.tfstate" \
+            -backend-config="region=eu-north-1" \
+            -backend-config="encrypt=true" \
+            -backend-config="use_lockfile=true"
+
+      - name: Terraform Plan Common
+        working-directory: ./common
+        run: |
+
+          terraform plan \
+            -out=plan-common.tfplan \
+            -input=false \
+            -var-file=${{ github.event.inputs.env }}/${{ github.event.inputs.env }}.tfvars
+
+          # Generate a colorized human-readable plan output
+          terraform show plan-common.tfplan > plan-common.txt
+          # terraform show -no-color plan.tfplan >> $GITHUB_STEP_SUMMARY
+          terraform show -no-color plan-common.tfplan | grep -E '^  #|^Plan:' | while read -r line; do
+            if [[ $line == *"will be created"* ]]; then
+              RESOURCE=$(echo "$line" | sed 's/^  # //' | sed 's/ will be created//')
+              echo "### ✅ $RESOURCE will be **created**" >> $GITHUB_STEP_SUMMARY
+            elif [[ $line == *"will be destroyed"* ]]; then
+              RESOURCE=$(echo "$line" | sed 's/^  # //' | sed 's/ will be destroyed//')
+              echo "### ❌ $RESOURCE will be **destroyed**" >> $GITHUB_STEP_SUMMARY
+            elif [[ $line == *"will be updated in-place"* ]]; then
+              RESOURCE=$(echo "$line" | sed 's/^  # //' | sed 's/ will be updated in-place//')
+              echo "### 🔁 $RESOURCE will be **updated**" >> $GITHUB_STEP_SUMMARY
+            elif [[ $line == Plan:* ]]; then
+              echo "**$line**" >> $GITHUB_STEP_SUMMARY
+            fi
+          done
+
+      - name: Upload Plan Output for Common
+        uses: actions/upload-artifact@v4
+        with:
+          name: terraform-plan-common
+          path: ./common/plan-common.tfplan
