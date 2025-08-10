@@ -275,7 +275,7 @@ jobs:
         run: |
           # IMPORTANT: apply the **binary** plan
           test -f "plan-${{ matrix.subdomain }}.tfplan" || { echo "Plan file missing"; exit 1; }
-          terraform apply -input=false -no-color plan-${{ matrix.subdomain }}.tfplan
+          # terraform apply -input=false -no-color plan-${{ matrix.subdomain }}.tfplan
 
   plan-common:
     name: Plan ► common @ ${{ github.event.inputs.env }}
