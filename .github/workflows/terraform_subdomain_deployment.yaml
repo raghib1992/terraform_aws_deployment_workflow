@@ -175,9 +175,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: terraform-plan-${{ matrix.subdomain }}
-          path: |
-            ${{ matrix.path }}/plan-${{ matrix.subdomain }}.tfplan
-            ${{ matrix.path }}/${{ github.event.inputs.env }}/${{ github.event.inputs.env }}.tfvars
+          path: ${{ matrix.path }}/plan-${{ matrix.subdomain }}.tfplan
           if-no-files-found: error
 
   terraform-apply:
@@ -237,19 +235,21 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: terraform-plan-${{ matrix.subdomain }}
-          path: |
-            ${{ matrix.path }}/plan-${{ matrix.subdomain }}.tfplan
-            ${{ matrix.path }}/${{ github.event.inputs.env }}/${{ github.event.inputs.env }}.tfvars
+          path: ${{ matrix.path }}
           # if-no-files-found: error
+
+      # (optional) sanity check
+      - name: List downloaded files
+        run: |
+          echo "PWD=$(pwd)"
+          ls -lah
+          echo "Module dir:"
+          ls -lah "${{ matrix.path }}"
       
       - name: Terraform Apply (${{ matrix.subdomain }})
         working-directory: ${{ matrix.path }}
         run: |
           # IMPORTANT: apply the **binary** plan
+          test -f "plan-${{ matrix.subdomain }}.tfplan" || { echo "Plan file missing"; exit 1; }
           # terraform apply -input=false -no-color plan-${{ matrix.subdomain }}.tfplan
-          ls -l
-          cd plan-${{ matrix.subdomain }}.tfplan
-          ls -l
-          pwd
-          cd ..
-          ls -l
+
