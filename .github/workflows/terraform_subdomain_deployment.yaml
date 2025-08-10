@@ -152,9 +152,9 @@ jobs:
             -var-file=${{ github.event.inputs.env }}/${{ github.event.inputs.env }}.tfvars
 
           # Generate a colorized human-readable plan output
-          terraform show plan.tfplan > plan-${{ matrix.subdomain }}.txt
+          terraform show plan-${{ matrix.subdomain }}.tfplan > plan-${{ matrix.subdomain }}.txt
           # terraform show -no-color plan.tfplan >> $GITHUB_STEP_SUMMARY
-          terraform show -no-color plan.tfplan | grep -E '^  #|^Plan:' | while read -r line; do
+          terraform show -no-color plan-${{ matrix.subdomain }}.tfplan | grep -E '^  #|^Plan:' | while read -r line; do
             if [[ $line == *"will be created"* ]]; then
               RESOURCE=$(echo "$line" | sed 's/^  # //' | sed 's/ will be created//')
               echo "### ✅ $RESOURCE will be **created**" >> $GITHUB_STEP_SUMMARY
