@@ -186,7 +186,8 @@ jobs:
       fail-fast: false
       matrix:
         include: ${{ fromJson(needs.generate-matrix.outputs.matrix-json) }}
-    environment: "${{ github.event.inputs.env }}-approval"
+    environment: 
+      name: ${{ matrix.env_name }}
     concurrency:
       group: tf-${{ github.event.inputs.env }}-${{ matrix.account_id }}-${{ matrix.subdomain }}
       cancel-in-progress: false
@@ -252,4 +253,3 @@ jobs:
           # IMPORTANT: apply the **binary** plan
           test -f "plan-${{ matrix.subdomain }}.tfplan" || { echo "Plan file missing"; exit 1; }
           terraform apply -input=false -no-color plan-${{ matrix.subdomain }}.tfplan
-

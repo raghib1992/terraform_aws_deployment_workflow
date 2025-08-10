@@ -52,12 +52,14 @@ def main():
 
     env = sys.argv[2]
     account_info = get_account_info(env)
+    env_name = f"apply-{env}"
 
     matrix = []
     for sub in subdomains:
         matrix.append({
             "subdomain": sub,
             "env": env,
+            "env_name": env_name,
             "account_id": account_info["account_id"],
             "account_name": account_info["account_name"],
             "path": f"{sub}"
