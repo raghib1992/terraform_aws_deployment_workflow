@@ -147,7 +147,7 @@ jobs:
         run: |
 
           terraform plan \
-            -out=plan.tfplan \
+            -out=plan-${{ matrix.subdomain }}.tfplan \
             -input=false \
             -var-file=${{ github.event.inputs.env }}/${{ github.event.inputs.env }}.tfvars
 
