@@ -33,6 +33,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref_name }}
 
       # - name: Get GitHub Apps Token # This enables access to Terraform modules in internal/private repos
       #   id: get_token
@@ -67,6 +69,8 @@ jobs:
     steps:
       - name: Checkout-Code
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref_name }}
 
       - name: Print Deployment Detailsß
         run: |
@@ -194,6 +198,8 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref_name }}
 
       - name: Configure AWS Credentials (apply)
         uses: aws-actions/configure-aws-credentials@v4
