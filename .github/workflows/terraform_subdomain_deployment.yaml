@@ -174,7 +174,7 @@ jobs:
           # Generate a colorized human-readable plan output
           terraform show plan-${{ matrix.subdomain }}.tfplan > plan-${{ matrix.subdomain }}.txt
           # terraform show -no-color plan.tfplan >> $GITHUB_STEP_SUMMARY
-          terraform show -no-color plan-common.tfplan |
+          terraform show -no-color plan-${{ matrix.subdomain }}.tfplan |
           awk '
             /^  # / {
               line=$0
