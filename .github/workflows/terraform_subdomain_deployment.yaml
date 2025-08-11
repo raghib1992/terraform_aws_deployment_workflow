@@ -280,7 +280,7 @@ jobs:
   plan-common:
     name: Plan ► common @ ${{ github.event.inputs.env }}
     runs-on: ubuntu-latest
-    if: ${{ github.event.inputs.deploy_common == 'true' && (needs.terraform-apply.result == 'success' || needs.terraform-apply.result == 'skipped') }}
+    if: ${{ always() && github.event.inputs.deploy_common == 'true' && (needs.terraform-apply.result == 'success' || needs.terraform-apply.result == 'skipped') }}
     needs: [generate-matrix, terraform-apply]
     steps:
       - name: Test this job
