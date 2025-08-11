@@ -174,64 +174,36 @@ jobs:
           # Generate a colorized human-readable plan output
           terraform show plan-${{ matrix.subdomain }}.tfplan > plan-${{ matrix.subdomain }}.txt
           # terraform show -no-color plan.tfplan >> $GITHUB_STEP_SUMMARY
-          terraform show -json "plan-${{ matrix.subdomain }}.tfplan" > "plan-${{ matrix.subdomain }}.json"
+          terraform show -no-color plan-common.tfplan |
+          awk '
+            /^  # / {
+              line=$0
+              sub(/^  # /,"",line)                        # strip leading "  # "
+              addr=line
+              sub(/ (will be|must be) .*/,"",addr)        # remove trailing " will be ..." / " must be ..."
+              act="other"
+              if (line ~ /will be created/)              act="create";
+              else if (line ~ /will be destroyed/)       act="destroy";
+              else if (line ~ /will be updated in-place/)act="update";
+              else if (line ~ /(must be|will be) replaced/) act="replace";
 
+              # Short address: strip module prefixes like module.foo. or module.bar[0].
+              short=addr
+              gsub(/(^|\.)module\.[^.]+(\[[0-9]+\])?(\.|$)/,".",short)
+              gsub(/\.\./,".",short); sub(/^\./,"",short); sub(/\.$/,"",short)
 
-          PLAN="plan-${{ matrix.subdomain }}.tfplan"
-          JSON="plan-${{ matrix.subdomain }}.json"
-
-          # Sanity checks
-          test -f "$PLAN" || { echo "❌ Plan file not found: $PLAN"; exit 1; }
-
-          # Create JSON once
-          terraform show -json "$PLAN" > "$JSON"
-
-          # How many resource changes?
-          COUNT=$(jq -r '.resource_changes | length' "$JSON" 2>/dev/null || echo 0)
-          echo "::notice:: resource_changes count=$COUNT"
-
-          if [ "$COUNT" -gt 0 ]; then
-            # Use JSON to list resource addresses & actions
-            jq -r '
-              .resource_changes[]?
-              | .change.actions as $a
-              | .address as $addr
-              | (if ($a|index("create") and $a|index("delete")) then "replace"
-                elif ($a|index("create")) then "create"
-                elif ($a|index("delete")) then "destroy"
-                elif ($a|index("update")) then "update"
-                else ($a|join(",")) end) as $act
-              | "\($act)\t\($addr)"
-            ' "$JSON" |
-            while IFS=$'\t' read -r act addr; do
-              # (Optional) strip module prefixes if you want only resource type.name[<idx>]
-              # CLEAN=$(echo "$addr" | sed -E 's/(^|\.)(module\.[^.]+\.?)+/\1/g')
-              CLEAN="$addr"
-              case "$act" in
-                create)  echo "### ✅ \`$CLEAN\` will be **created**"   >> "$GITHUB_STEP_SUMMARY" ;;
-                update)  echo "### 🔁 \`$CLEAN\` will be **updated**"   >> "$GITHUB_STEP_SUMMARY" ;;
-                destroy) echo "### ❌ \`$CLEAN\` will be **destroyed**" >> "$GITHUB_STEP_SUMMARY" ;;
-                replace) echo "### ♻️  \`$CLEAN\` will be **replaced**" >> "$GITHUB_STEP_SUMMARY" ;;
-                *)       echo "### ℹ️  \`$CLEAN\` action: $act"         >> "$GITHUB_STEP_SUMMARY" ;;
-              esac
-            done
-          else
-            # Fallback: parse human output (handles some unusual plans)
-            terraform show -no-color "$PLAN" |
-              grep -E '^  # ' |
-              sed -E 's/^  # (.+?) (will be .*)$/\1\t\2/' |
-            while IFS=$'\t' read -r addr msg; do
-              # Optional: strip module prefixes
-              # addr=$(echo "$addr" | sed -E 's/(^|\.)(module\.[^.]+\.?)+/\1/g')
-              case "$msg" in
-                *"will be created"*)        echo "### ✅ \`$addr\` will be **created**"   >> "$GITHUB_STEP_SUMMARY" ;;
-                *"will be destroyed"*)      echo "### ❌ \`$addr\` will be **destroyed**" >> "$GITHUB_STEP_SUMMARY" ;;
-                *"will be updated in-place"*) echo "### 🔁 \`$addr\` will be **updated**" >> "$GITHUB_STEP_SUMMARY" ;;
-                *"must be replaced"*)       echo "### ♻️  \`$addr\` will be **replaced**" >> "$GITHUB_STEP_SUMMARY" ;;
-                *)                          echo "### ℹ️  \`$addr\` $msg"                 >> "$GITHUB_STEP_SUMMARY" ;;
-              esac
-            done
-          fi
+              printf "%s\t%s\t%s\n", act, addr, short
+            }
+          ' |
+          while IFS=$'\t' read -r act addr short; do
+            case "$act" in
+              create)  echo "### ✅ \`$short\` *(full: \`$addr\`)* will be **created**"   >> "$GITHUB_STEP_SUMMARY" ;;
+              update)  echo "### 🔁 \`$short\` *(full: \`$addr\`)* will be **updated**"   >> "$GITHUB_STEP_SUMMARY" ;;
+              destroy) echo "### ❌ \`$short\` *(full: \`$addr\`)* will be **destroyed**" >> "$GITHUB_STEP_SUMMARY" ;;
+              replace) echo "### ♻️  \`$short\` *(full: \`$addr\`)* will be **replaced**" >> "$GITHUB_STEP_SUMMARY" ;;
+              *)       echo "### ℹ️  \`$short\` *(full: \`$addr\`)* action: $act"         >> "$GITHUB_STEP_SUMMARY" ;;
+            esac
+          done
         
         working-directory: ${{ matrix.path }}
 
@@ -406,20 +378,20 @@ jobs:
       #     # Generate a colorized human-readable plan output
       #     terraform show plan-common.tfplan > plan-common.txt
       #     # terraform show -no-color plan.tfplan >> $GITHUB_STEP_SUMMARY
-      #     terraform show -no-color plan-common.tfplan | grep -E '^  #|^Plan:' | while read -r line; do
-      #       if [[ $line == *"will be created"* ]]; then
-      #         RESOURCE=$(echo "$line" | sed 's/^  # //' | sed 's/ will be created//')
-      #         echo "### ✅ $RESOURCE will be **created**" >> $GITHUB_STEP_SUMMARY
-      #       elif [[ $line == *"will be destroyed"* ]]; then
-      #         RESOURCE=$(echo "$line" | sed 's/^  # //' | sed 's/ will be destroyed//')
-      #         echo "### ❌ $RESOURCE will be **destroyed**" >> $GITHUB_STEP_SUMMARY
-      #       elif [[ $line == *"will be updated in-place"* ]]; then
-      #         RESOURCE=$(echo "$line" | sed 's/^  # //' | sed 's/ will be updated in-place//')
-      #         echo "### 🔁 $RESOURCE will be **updated**" >> $GITHUB_STEP_SUMMARY
-      #       elif [[ $line == Plan:* ]]; then
-      #         echo "**$line**" >> $GITHUB_STEP_SUMMARY
-      #       fi
-      #     done
+          # terraform show -no-color plan-common.tfplan | grep -E '^  #|^Plan:' | while read -r line; do
+          #   if [[ $line == *"will be created"* ]]; then
+          #     RESOURCE=$(echo "$line" | sed 's/^  # //' | sed 's/ will be created//')
+          #     echo "### ✅ $RESOURCE will be **created**" >> $GITHUB_STEP_SUMMARY
+          #   elif [[ $line == *"will be destroyed"* ]]; then
+          #     RESOURCE=$(echo "$line" | sed 's/^  # //' | sed 's/ will be destroyed//')
+          #     echo "### ❌ $RESOURCE will be **destroyed**" >> $GITHUB_STEP_SUMMARY
+          #   elif [[ $line == *"will be updated in-place"* ]]; then
+          #     RESOURCE=$(echo "$line" | sed 's/^  # //' | sed 's/ will be updated in-place//')
+          #     echo "### 🔁 $RESOURCE will be **updated**" >> $GITHUB_STEP_SUMMARY
+          #   elif [[ $line == Plan:* ]]; then
+          #     echo "**$line**" >> $GITHUB_STEP_SUMMARY
+          #   fi
+          # done
 
       # - name: Upload Plan Output for Common
       #   uses: actions/upload-artifact@v4
