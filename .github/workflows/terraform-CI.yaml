@@ -39,7 +39,6 @@ jobs:
               -not -path '*/.terraform/*' -exec dirname {} \; \
             | sed 's#^\./##' | sort -u)
           printf 'dirs=%s\n' "$(printf '%s\n' "${TF_DIRS[@]}" | jq -R . | jq -s .)" >> "$GITHUB_OUTPUT"
-          # Example output: ["basket","order-management"]
 
   terraform-scan:
     name: Scan ► ${{ matrix.subdomain }} Subdomain
