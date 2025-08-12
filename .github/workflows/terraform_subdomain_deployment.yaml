@@ -6,11 +6,10 @@ on:
       subdomains:
         description: 'JSON list of subdomains (e.g. ["basket", "order-management"])'
         type: string
-        # required: true
       env:
         description: 'Target environment'
         type: choice
-        default: production
+        default: sandbox
         options:
           - sandbox
           - dev
@@ -21,7 +20,7 @@ on:
           - production
         required: true
       deploy_common:
-        description: 'Common deployment steps'
+        description: 'Common Resources Deployment'
         required: true
         type: boolean
         default: false
@@ -74,7 +73,7 @@ jobs:
           echo "matrix-count=$COUNT" >> "$GITHUB_OUTPUT"
 
   terraform-plan:
-    name: Plan ${{ matrix.subdomain }} Subdomain ► ${{ github.event.inputs.env }}
+    name: Plan ► ${{ matrix.subdomain }} Subdomain @ ${{ github.event.inputs.env }} Environment
     if: ${{ needs.generate-matrix.outputs.matrix-count > 0 }}
     runs-on: ubuntu-latest
     needs: generate-matrix
@@ -94,51 +93,49 @@ jobs:
           echo "Using AWS Account: ${{ matrix.account_id }}"
           echo "Path: ${{ matrix.path }}"
           echo "Using AWS Account: ${{ matrix.account_name }}"
-          # Here you can call terraform, ansible, helm, etc.
 
       - name: Configure AWS Credentials for reading state
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          # role-to-assume: arn:aws:iam::${{ matrix.account_id }}:role/github-workflow-role-tf-deployer
-          role-to-assume: arn:aws:iam::${{ matrix.account_id }}:role/github-actions-role
+          role-to-assume: arn:aws:iam::${{ matrix.account_id }}:role/github-workflow-role-tf-deployer
+          # role-to-assume: arn:aws:iam::${{ matrix.account_id }}:role/github-actions-role
           role-session-name: tf-ami-deployer-pipeline
-          aws-region: eu-north-1
+          # aws-region: eu-north-1
 
       - name: Test AWS Access
         run: aws sts get-caller-identity
 
-      - name: Set Terraform Backend Bucket Name from Env
-        id: set-backend
-        run: |
-          case "${{ github.event.inputs.env }}" in
-            dev)
-              BUCKET_NAME="dev-statefile-terraform"
-              ;;
-            qa)
-              BUCKET_NAME="qa-statefile-terraform"
-              ;;
-            sandbox)
-              BUCKET_NAME="sandbox-statefile-terraform"
-              ;;
-            performance)
-              BUCKET_NAME="perf-statefile-terraform"
-              ;;
-            staging)
-              BUCKET_NAME="stg-statefile-terraform"
-              ;;
-            staging-green)
-              BUCKET_NAME="stg-green-statefile-terraform"
-              ;;
-            production)
-              # BUCKET_NAME="production-statefile-terraform"
-              BUCKET_NAME="poc-terraform-loc"
-              ;;
-            *)
-              echo "Unknown environment: ${{ github.event.inputs.env }}"
-              exit 1
-              ;;
-          esac
-          echo "bucket_name=$BUCKET_NAME" >> "$GITHUB_OUTPUT"
+      # - name: Set Terraform Backend Bucket Name from Env
+      #   id: set-backend
+      #   run: |
+      #     case "${{ github.event.inputs.env }}" in
+      #       dev)
+      #         BUCKET_NAME="dev-statefile-terraform"
+      #         ;;
+      #       qa)
+      #         BUCKET_NAME="qa-statefile-terraform"
+      #         ;;
+      #       sandbox)
+      #         BUCKET_NAME="sandbox-statefile-terraform"
+      #         ;;
+      #       performance)
+      #         BUCKET_NAME="perf-statefile-terraform"
+      #         ;;
+      #       staging)
+      #         BUCKET_NAME="stg-statefile-terraform"
+      #         ;;
+      #       staging-green)
+      #         BUCKET_NAME="stg-green-statefile-terraform"
+      #         ;;
+      #       production)
+      #         BUCKET_NAME="production-statefile-terraform"
+      #         ;;
+      #       *)
+      #         echo "Unknown environment: ${{ github.event.inputs.env }}"
+      #         exit 1
+      #         ;;
+      #     esac
+      #     echo "bucket_name=$BUCKET_NAME" >> "$GITHUB_OUTPUT"
 
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3  
@@ -155,9 +152,9 @@ jobs:
         run: |
           subdomain="${{ matrix.subdomain }}"
           terraform init -reconfigure \
-            -backend-config="bucket=${{ steps.set-backend.outputs.bucket_name }}" \
-            -backend-config="key=order/$subdomain/terraform.tfstate" \
-            -backend-config="region=eu-north-1" \
+            -backend-config="bucket=${{ matrix.bucket_name }}" \
+            -backend-config="key=order/$subdomain/terraform.tfstate" \  # Change order to make dynamic 
+            -backend-config="region=us-east-1" \
             -backend-config="encrypt=true" \
             -backend-config="use_lockfile=true"                       # Enable state locking =true"
             # -backend-config="dynamodb_table=terraform-locks-dev"
@@ -171,9 +168,24 @@ jobs:
             -input=false \
             -var-file=${{ github.event.inputs.env }}/${{ github.event.inputs.env }}.tfvars
 
-          # Generate a colorized human-readable plan output
-          terraform show plan-${{ matrix.subdomain }}.tfplan > plan-${{ matrix.subdomain }}.txt
-          # terraform show -no-color plan.tfplan >> $GITHUB_STEP_SUMMARY
+          # # Generate a colorized human-readable plan output
+          # terraform show plan-${{ matrix.subdomain }}.tfplan > plan-${{ matrix.subdomain }}.txt
+          # # terraform show -no-color plan.tfplan >> $GITHUB_STEP_SUMMARY
+          # terraform show -no-color plan-${{ matrix.subdomain }}.tfplan | grep -E '^  #|^Plan:' | while read -r line; do
+          #   if [[ $line == *"will be created"* ]]; then
+          #     RESOURCE=$(echo "$line" | sed 's/^  # //' | sed 's/ will be created//')
+          #     echo "### ✅ $RESOURCE will be **created**" >> $GITHUB_STEP_SUMMARY
+          #   elif [[ $line == *"will be destroyed"* ]]; then
+          #     RESOURCE=$(echo "$line" | sed 's/^  # //' | sed 's/ will be destroyed//')
+          #     echo "### ❌ $RESOURCE will be **destroyed**" >> $GITHUB_STEP_SUMMARY
+          #   elif [[ $line == *"will be updated in-place"* ]]; then
+          #     RESOURCE=$(echo "$line" | sed 's/^  # //' | sed 's/ will be updated in-place//')
+          #     echo "### 🔁 $RESOURCE will be **updated**" >> $GITHUB_STEP_SUMMARY
+          #   elif [[ $line == Plan:* ]]; then
+          #     echo "**$line**" >> $GITHUB_STEP_SUMMARY
+          #   fi
+          # done
+
           terraform show -no-color plan-${{ matrix.subdomain }}.tfplan |
           awk '
             /^  # / {
@@ -204,9 +216,9 @@ jobs:
               *)       echo "### ℹ️  \`$short\` *(full: \`$addr\`)* action: $act"         >> "$GITHUB_STEP_SUMMARY" ;;
             esac
           done
-        
-        working-directory: ${{ matrix.path }}
 
+          terraform show -no-color plan-${{ matrix.subdomain }}.tfplan | grep '^Plan:' >> $GITHUB_STEP_SUMMARY
+        working-directory: ${{ matrix.path }}
 
       - name: Upload Plan Output for ${{ matrix.subdomain }}
         uses: actions/upload-artifact@v4
@@ -216,10 +228,10 @@ jobs:
           if-no-files-found: error
 
   terraform-apply:
-    name: Apply ► ${{ matrix.subdomain }} @ ${{ github.event.inputs.env }}
+    name: Apply ► ${{ matrix.subdomain }} @ ${{ github.event.inputs.env }} Environment
     if: ${{ needs.generate-matrix.outputs.matrix-count > 0 }}
     runs-on: ubuntu-latest
-    needs: [generate-matrix, terraform-plan]   # <-- add generate-matrix here
+    needs: [generate-matrix, terraform-plan]
     strategy:
       fail-fast: false
       matrix:
@@ -238,24 +250,25 @@ jobs:
       - name: Configure AWS Credentials (apply)
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: arn:aws:iam::${{ matrix.account_id }}:role/github-actions-role
+          role-to-assume: arn:aws:iam::${{ matrix.account_id }}:role/github-workflow-role-tf-deployer
+          # role-to-assume: arn:aws:iam::${{ matrix.account_id }}:role/github-actions-role
           role-session-name: tf-apply-session
-          aws-region: eu-north-1
+          # aws-region: eu-north-1
 
-      - name: Set TF backend bucket
-        id: set-backend
-        run: |
-          case "${{ github.event.inputs.env }}" in
-            dev) BUCKET="dev-statefile-terraform" ;;
-            qa) BUCKET="qa-statefile-terraform" ;;
-            sandbox) BUCKET="sandbox-statefile-terraform" ;;
-            performance) BUCKET="perf-statefile-terraform" ;;
-            staging) BUCKET="stg-statefile-terraform" ;;
-            staging-green) BUCKET="stg-green-statefile-terraform" ;;
-            production) BUCKET="poc-terraform-loc" ;;
-            *) echo "Unknown env"; exit 1 ;;
-          esac
-          echo "bucket_name=$BUCKET" >> "$GITHUB_OUTPUT"
+      # - name: Set TF backend bucket
+      #   id: set-backend
+      #   run: |
+      #     case "${{ github.event.inputs.env }}" in
+      #       dev) BUCKET="dev-statefile-terraform" ;;
+      #       qa) BUCKET="qa-statefile-terraform" ;;
+      #       sandbox) BUCKET="sandbox-statefile-terraform" ;;
+      #       performance) BUCKET="perf-statefile-terraform" ;;
+      #       staging) BUCKET="stg-statefile-terraform" ;;
+      #       staging-green) BUCKET="stg-green-statefile-terraform" ;;
+      #       production) BUCKET="production-statefile-terraform" ;;
+      #       *) echo "Unknown env"; exit 1 ;;
+      #     esac
+      #     echo "bucket_name=$BUCKET" >> "$GITHUB_OUTPUT"
 
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
@@ -266,9 +279,9 @@ jobs:
         working-directory: ${{ matrix.path }}
         run: |
           terraform init -reconfigure \
-            -backend-config="bucket=${{ steps.set-backend.outputs.bucket_name }}" \
+            -backend-config="bucket=${{ matrix.bucket_name }}" \
             -backend-config="key=order/${{ matrix.subdomain }}/terraform.tfstate" \
-            -backend-config="region=eu-north-1" \
+            -backend-config="region=us-east-1" \
             -backend-config="encrypt=true" \
             -backend-config="use_lockfile=true"
 
@@ -279,33 +292,23 @@ jobs:
           path: ${{ matrix.path }}
           # if-no-files-found: error
 
-      # (optional) sanity check
-      - name: List downloaded files
-        run: |
-          echo "PWD=$(pwd)"
-          ls -lah
-          echo "Module dir:"
-          ls -lah "${{ matrix.path }}"
-      
       - name: Terraform Apply (${{ matrix.subdomain }})
         working-directory: ${{ matrix.path }}
         run: |
           # IMPORTANT: apply the **binary** plan
           test -f "plan-${{ matrix.subdomain }}.tfplan" || { echo "Plan file missing"; exit 1; }
-          # terraform apply -input=false -no-color plan-${{ matrix.subdomain }}.tfplan
+          terraform apply -input=false -no-color plan-${{ matrix.subdomain }}.tfplan
 
   plan-common:
-    name: Plan ► common @ ${{ github.event.inputs.env }}
+    name: Plan ► common @ ${{ github.event.inputs.env }} Environment
     runs-on: ubuntu-latest
     if: ${{ always() && github.event.inputs.deploy_common == 'true' && (needs.terraform-apply.result == 'success' || needs.terraform-apply.result == 'skipped') }}
     needs: [generate-matrix, terraform-apply]
     steps:
-      - name: Test this job
-        run: echo "Testing plan-common job"
-      # - name: Checkout code
-      #   uses: actions/checkout@v4
-      #   with:
-      #     ref: ${{ github.ref_name }}
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref_name }}
       
       # - name: Set TF backend bucket
       #   id: set-backend
@@ -344,58 +347,162 @@ jobs:
       #     echo "bucket_name=$BUCKET" >> "$GITHUB_OUTPUT"
       #     echo "account_id=$ACCOUNT_ID" >> "$GITHUB_OUTPUT"
 
-      # - name: Configure AWS Credentials (plan)
-      #   uses: aws-actions/configure-aws-credentials@v4
-      #   with:
-      #     role-to-assume: arn:aws:iam::${{ steps.set-backend.outputs.account_id }}:role/github-actions-role
-      #     role-session-name: tf-plan-session
-      #     aws-region: eu-north-1
+      - name: Configure AWS Credentials (plan)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::${{ steps.set-backend.outputs.account_id }}:role/github-workflow-role-tf-deployer
+          # role-to-assume: arn:aws:iam::${{ steps.set-backend.outputs.account_id }}:role/github-actions-role
+          role-session-name: tf-plan-session
+          # aws-region: eu-north-1
 
-      # - name: Setup Terraform
-      #   uses: hashicorp/setup-terraform@v3
-      #   with:
-      #     terraform_version: v1.12.2
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: v1.12.2
 
-      # - name: Terraform Init (same backend)
-      #   working-directory: ./common
+      - name: Terraform Init (same backend)
+        working-directory: ./common
+        run: |
+          terraform init -reconfigure \
+            -backend-config="bucket=${{ matrix.bucket_name }}" \
+            -backend-config="key=order/common/terraform.tfstate" \
+            -backend-config="region=us-east-1" \
+            -backend-config="encrypt=true" \
+            -backend-config="use_lockfile=true"
+
+      - name: Terraform Plan Common
+        working-directory: ./common
+        run: |
+
+          terraform plan \
+            -out=plan-common.tfplan \
+            -input=false \
+            -var-file=${{ github.event.inputs.env }}/${{ github.event.inputs.env }}.tfvars
+
+          # Generate a colorized human-readable plan output
+          terraform show -no-color plan-common.tfplan |
+          awk '
+            /^  # / {
+              line=$0
+              sub(/^  # /,"",line)                        # strip leading "  # "
+              addr=line
+              sub(/ (will be|must be) .*/,"",addr)        # remove trailing " will be ..." / " must be ..."
+              act="other"
+              if (line ~ /will be created/)              act="create";
+              else if (line ~ /will be destroyed/)       act="destroy";
+              else if (line ~ /will be updated in-place/)act="update";
+              else if (line ~ /(must be|will be) replaced/) act="replace";
+
+              # Short address: strip module prefixes like module.foo. or module.bar[0].
+              short=addr
+              gsub(/(^|\.)module\.[^.]+(\[[0-9]+\])?(\.|$)/,".",short)
+              gsub(/\.\./,".",short); sub(/^\./,"",short); sub(/\.$/,"",short)
+
+              printf "%s\t%s\t%s\n", act, addr, short
+            }
+          ' |
+          while IFS=$'\t' read -r act addr short; do
+            case "$act" in
+              create)  echo "### ✅ \`$short\` *(full: \`$addr\`)* will be **created**"   >> "$GITHUB_STEP_SUMMARY" ;;
+              update)  echo "### 🔁 \`$short\` *(full: \`$addr\`)* will be **updated**"   >> "$GITHUB_STEP_SUMMARY" ;;
+              destroy) echo "### ❌ \`$short\` *(full: \`$addr\`)* will be **destroyed**" >> "$GITHUB_STEP_SUMMARY" ;;
+              replace) echo "### ♻️  \`$short\` *(full: \`$addr\`)* will be **replaced**" >> "$GITHUB_STEP_SUMMARY" ;;
+              *)       echo "### ℹ️  \`$short\` *(full: \`$addr\`)* action: $act"         >> "$GITHUB_STEP_SUMMARY" ;;
+            esac
+          done
+
+          terraform show -no-color plan-common.tfplan | grep '^Plan:' >> $GITHUB_STEP_SUMMARY
+
+      - name: Upload Plan Output for Common
+        uses: actions/upload-artifact@v4
+        with:
+          name: terraform-plan-common
+          path: ./common/plan-common.tfplan
+          if-no-files-found: error
+
+  apply-common:
+    name: Apply ► common @ ${{ github.event.inputs.env }} Environment
+    runs-on: ubuntu-latest
+    if: ${{ always() && github.event.inputs.deploy_common && needs.plan-common.result == 'success' }}
+    needs: [generate-matrix, plan-common]
+    environment: 
+      name: apply-common-${{ github.event.inputs.env }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref_name }}
+
+      # - name: Set TF backend bucket
+      #   id: set-backend
       #   run: |
-      #     terraform init -reconfigure \
-      #       -backend-config="bucket=${{ steps.set-backend.outputs.bucket_name }}" \
-      #       -backend-config="key=order/common/terraform.tfstate" \
-      #       -backend-config="region=eu-north-1" \
-      #       -backend-config="encrypt=true" \
-      #       -backend-config="use_lockfile=true"
+      #     case "${{ github.event.inputs.env }}" in
+      #       dev) 
+      #         BUCKET="dev-statefile-terraform" 
+      #         ACCOUNT_ID="254390148077"
+      #         ;;
+      #       qa) 
+      #         BUCKET="qa-statefile-terraform" 
+      #         ACCOUNT_ID="039871571616"
+      #         ;;
+      #       sandbox) 
+      #         BUCKET="sandbox-statefile-terraform" 
+      #         ACCOUNT_ID="800643485173"
+      #         ;;
+      #       performance) 
+      #         BUCKET="perf-statefile-terraform" 
+      #         ACCOUNT_ID="677977426648"
+      #         ;;
+      #       staging) 
+      #         BUCKET="stg-statefile-terraform" 
+      #         ACCOUNT_ID="649128807268"
+      #         ;;
+      #       staging-green) 
+      #         BUCKET="stg-green-statefile-terraform" 
+      #         ACCOUNT_ID="606184927985"
+      #         ;;
+      #       production) 
+      #         BUCKET="poc-terraform-loc" 
+      #         ACCOUNT_ID="271547279005"
+      #         ;;
+      #       *) echo "Unknown env"; exit 1 ;;
+      #     esac
+      #     echo "bucket_name=$BUCKET" >> "$GITHUB_OUTPUT"
+      #     echo "account_id=$ACCOUNT_ID" >> "$GITHUB_OUTPUT"
 
-      # - name: Terraform Plan Common
-      #   working-directory: ./common
-      #   run: |
+      - name: Configure AWS Credentials (apply)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::${{ steps.set-backend.outputs.account_id }}:role/github-workflow-role-tf-deployer
+          # role-to-assume: arn:aws:iam::${{ matrix.account_id }}:role/github-actions-role
+          role-session-name: tf-apply-session
+          # aws-region: eu-north-1
 
-      #     terraform plan \
-      #       -out=plan-common.tfplan \
-      #       -input=false \
-      #       -var-file=${{ github.event.inputs.env }}/${{ github.event.inputs.env }}.tfvars
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: v1.12.2
 
-      #     # Generate a colorized human-readable plan output
-      #     terraform show plan-common.tfplan > plan-common.txt
-      #     # terraform show -no-color plan.tfplan >> $GITHUB_STEP_SUMMARY
-          # terraform show -no-color plan-common.tfplan | grep -E '^  #|^Plan:' | while read -r line; do
-          #   if [[ $line == *"will be created"* ]]; then
-          #     RESOURCE=$(echo "$line" | sed 's/^  # //' | sed 's/ will be created//')
-          #     echo "### ✅ $RESOURCE will be **created**" >> $GITHUB_STEP_SUMMARY
-          #   elif [[ $line == *"will be destroyed"* ]]; then
-          #     RESOURCE=$(echo "$line" | sed 's/^  # //' | sed 's/ will be destroyed//')
-          #     echo "### ❌ $RESOURCE will be **destroyed**" >> $GITHUB_STEP_SUMMARY
-          #   elif [[ $line == *"will be updated in-place"* ]]; then
-          #     RESOURCE=$(echo "$line" | sed 's/^  # //' | sed 's/ will be updated in-place//')
-          #     echo "### 🔁 $RESOURCE will be **updated**" >> $GITHUB_STEP_SUMMARY
-          #   elif [[ $line == Plan:* ]]; then
-          #     echo "**$line**" >> $GITHUB_STEP_SUMMARY
-          #   fi
-          # done
+      - name: Terraform Init (same backend)
+        working-directory: ./common
+        run: |
+          terraform init -reconfigure \
+            -backend-config="bucket=${{ matrix.bucket_name }}" \
+            -backend-config="key=order/common/terraform.tfstate" \
+            -backend-config="region=us-east-1" \
+            -backend-config="encrypt=true" \
+            -backend-config="use_lockfile=true"
 
-      # - name: Upload Plan Output for Common
-      #   uses: actions/upload-artifact@v4
-      #   with:
-      #     name: terraform-plan-common
-      #     path: ./common/plan-common.tfplan
-      #     if-no-files-found: error
+      - name: Download plan
+        uses: actions/download-artifact@v4
+        with:
+          name: terraform-plan-common
+          path: ./common
+          # if-no-files-found: error
+
+      - name: Terraform Apply (common)
+        working-directory: ./common
+        run: |
+          # IMPORTANT: apply the **binary** plan
+          test -f "plan-common.tfplan" || { echo "Plan file missing"; exit 1; }
+          terraform apply -input=false -no-color plan-common.tfplan
