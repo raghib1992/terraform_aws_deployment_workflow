@@ -1,4 +1,4 @@
-name: Terraform Deployment
+name: Call Reusable Workflow
 
 on:
   workflow_dispatch:
