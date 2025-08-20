@@ -19,11 +19,6 @@ on:
           - staging-green
           - production
         required: true
-      deploy_common:
-        description: 'Common Resources Deployment'
-        required: true
-        type: boolean
-        default: false
 
 permissions:
   actions: write
@@ -32,4 +27,4 @@ permissions:
 
 jobs:
   generate-matrix:
-    uses: ./.github/workflows/reusable_deployment.yaml
+    uses: ./.github/workflows/reusable-workflow.yaml

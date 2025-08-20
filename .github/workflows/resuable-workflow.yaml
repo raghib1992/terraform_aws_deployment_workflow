@@ -1,28 +1,23 @@
 name: Deployment - Resuable Deployment
 
 on: 
-  workflow_dispatch:
+  workflow_call:
 
 jobs:
-    generate-matrix:
+    reusable-workflow:
       name: Generate Matrix
       runs-on: ubuntu-latest
       outputs:
         matrix-json: ${{ steps.build.outputs.matrix-json }}
         matrix-count: ${{ steps.build.outputs.matrix-count }}
+        account_id: ${{ steps.build.outputs.account_id }}
+        account_name: ${{ steps.build.outputs.account_name }}
+        bucket_name: ${{ steps.build.outputs.bucket_name }}
       steps:
         - name: Checkout
           uses: actions/checkout@v4
           with:
             ref: ${{ github.ref_name }}
-
-        # - name: Get GitHub Apps Token # This enables access to Terraform modules in internal/private repos
-        #   id: get_token
-        #   uses: tibdex/github-app-token@v1.7.0
-        #   with:
-        #     private_key: ${{ secrets.ORG_REPO_READ_PRIVATE_KEY }}
-        #     app_id: ${{ secrets.ORG_REPO_READ_APP_ID }}
-        #   # Doc: https://github.com/marketplace/actions/github-app-token
 
         - name: Setup Python
           uses: actions/setup-python@v5
@@ -32,6 +27,49 @@ jobs:
         - name: Generate Matrix
           id: build
           run: |
+            case "${{ github.event.inputs.env }}" in
+              dev) 
+                # BUCKET="dev-statefile-terraform" 
+                # ACCOUNT_ID="254390148077"
+                BUCKET="sandbox-statefile-terraform" 
+                ACCOUNT_ID="800643485173"
+                ACCOUNT_NAME="dev-account"
+                ;;
+              qa) 
+                # BUCKET="qa-statefile-terraform" 
+                # ACCOUNT_ID="039871571616"
+                BUCKET="sandbox-statefile-terraform" 
+                ACCOUNT_ID="800643485173"
+                ACCOUNT_NAME="qa-account"
+                ;;
+              sandbox) 
+                BUCKET="sandbox-statefile-terraform" 
+                ACCOUNT_ID="800643485173"
+                ACCOUNT_NAME="sandbox-account"
+                ;;
+              performance) 
+                BUCKET="perf-statefile-terraform" 
+                ACCOUNT_ID="677977426648"
+                ACCOUNT_NAME="performance-account"
+                ;;
+              staging) 
+                BUCKET="stg-statefile-terraform" 
+                ACCOUNT_ID="649128807268"
+                ACCOUNT_NAME="staging-account"
+                ;;
+              staging-green) 
+                BUCKET="stg-green-statefile-terraform" 
+                ACCOUNT_ID="606184927985"
+                ACCOUNT_NAME="staging-green-account"
+                ;;
+              production) 
+                BUCKET="poc-terraform-loc" 
+                ACCOUNT_ID="271547279005"
+                ACCOUNT_NAME="production-account"
+                ;;
+              *) echo "Unknown env"; exit 1 ;;
+            esac
+            
             SUBDOMAINS='${{ github.event.inputs.subdomains }}'
             TRIMMED=$(echo "$SUBDOMAINS" | tr -d '[:space:]')
             if [ -z "$TRIMMED" ]; then
@@ -44,3 +82,6 @@ jobs:
             COUNT=$(printf '%s' "$MATRIX" | jq 'length')
             echo "matrix-json=$MATRIX"  >> "$GITHUB_OUTPUT"
             echo "matrix-count=$COUNT" >> "$GITHUB_OUTPUT"
+            echo "bucket_name=$BUCKET" >> "$GITHUB_OUTPUT"
+            echo "account_id=$ACCOUNT_ID" >> "$GITHUB_OUTPUT"
+            echo "account_name=$ACCOUNT_NAME" >> "$GITHUB_OUTPUT"
