@@ -1,0 +1,46 @@
+name: Deployment - Resuable Deployment
+
+on: 
+  workflow_dispatch:
+
+jobs:
+    generate-matrix:
+      name: Generate Matrix
+      runs-on: ubuntu-latest
+      outputs:
+        matrix-json: ${{ steps.build.outputs.matrix-json }}
+        matrix-count: ${{ steps.build.outputs.matrix-count }}
+      steps:
+        - name: Checkout
+          uses: actions/checkout@v4
+          with:
+            ref: ${{ github.ref_name }}
+
+        # - name: Get GitHub Apps Token # This enables access to Terraform modules in internal/private repos
+        #   id: get_token
+        #   uses: tibdex/github-app-token@v1.7.0
+        #   with:
+        #     private_key: ${{ secrets.ORG_REPO_READ_PRIVATE_KEY }}
+        #     app_id: ${{ secrets.ORG_REPO_READ_APP_ID }}
+        #   # Doc: https://github.com/marketplace/actions/github-app-token
+
+        - name: Setup Python
+          uses: actions/setup-python@v5
+          with:
+            python-version: 3.x
+
+        - name: Generate Matrix
+          id: build
+          run: |
+            SUBDOMAINS='${{ github.event.inputs.subdomains }}'
+            TRIMMED=$(echo "$SUBDOMAINS" | tr -d '[:space:]')
+            if [ -z "$TRIMMED" ]; then
+              MATRIX="[]"
+            else
+              echo '${{ github.event.inputs.subdomains }}' > subdomains.json
+              MATRIX=$(python3 scripts/build_matrix.py '${{ github.event.inputs.subdomains }}' '${{ github.event.inputs.env }}')
+            fi
+            echo "$MATRIX"
+            COUNT=$(printf '%s' "$MATRIX" | jq 'length')
+            echo "matrix-json=$MATRIX"  >> "$GITHUB_OUTPUT"
+            echo "matrix-count=$COUNT" >> "$GITHUB_OUTPUT"

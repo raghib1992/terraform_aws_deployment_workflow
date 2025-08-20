@@ -32,16 +32,26 @@ jobs:
 
       - name: Generate Matrix
         id: collect
-        shell: bash
         run: |
-          # Example: find dirs with *.tf, strip "./", output JSON array
-          mapfile -t TF_DIRS < <(find . -type f -name '*.tf' \
-              -not -path '*/.terraform/*' -exec dirname {} \; \
-            | sed 's#^\./##' | sort -u)
-          printf 'dirs=%s\n' "$(printf '%s\n' "${TF_DIRS[@]}" | jq -R . | jq -s .)" >> "$GITHUB_OUTPUT"
+          set -euo pipefail
+
+            # Find all directories containing Terraform files (*.tf), excluding .terraform cache
+            TF_DIRS=(
+            $(find . -type f -name '*.tf' \
+                -not -path '*/.terraform/*' \
+                -exec dirname {} \; \
+                | sed 's#^\./##' \
+                | sort -u)
+            )
+
+            # Join with ", " between items
+            OUTPUT=$(IFS=, ; echo "[${TF_DIRS[*]}]")
+
+            # Ensure there's a space after commas for readability
+            echo "${OUTPUT//,/, }"
 
   terraform-scan:
-    name: Scan ► ${{ matrix.subdomain }} Subdomain
+    name: Scan ► Terraform FilesSubdomain
     runs-on: ubuntu-latest
     needs: generate-matrix
     strategy:
