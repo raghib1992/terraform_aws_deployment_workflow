@@ -28,3 +28,12 @@ permissions:
 jobs:
   generate-matrix:
     uses: ./.github/workflows/reusable-workflow.yaml
+    # Pass secret from caller workflow to called workflow
+    secrets:
+      k8s-kubeconfig: ${{ secrets.k8s-kubeconfig }}
+      mongodb-password: ${{ secrets.mongodb-password }}
+    with:
+      mongodb-uri: ${{ vars.mongodb-uri }}
+      env: ${{ github.event.inputs.env }}
+      prod-dir: ${{ vars.prod-dir }}
+      dev-dir: ${{ vars.dev-dir }}

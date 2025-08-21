@@ -2,9 +2,33 @@ name: Reusable Deployment
 
 on: 
   workflow_call:
+    secrets:
+      k8s-kubeconfig:
+        required: true
+      mongodb-password:
+        required: true
+    inputs:
+      mongodb-uri:
+        required: true
+        type: string
+        description: The MongoDB connection URI
+      env:
+        required: true
+        type: string
+        description: The target environment
+      prod-dir:
+        required: true
+        type: string
+        description: The production directory
+      dev-dir:
+        required: true
+        type: string
+        description: The development directory
 
 jobs:
     reusable-workflow:
+      environment:
+        name: ${{ inputs.env }}
       name: Generate Matrix
       runs-on: ubuntu-latest
       outputs:
@@ -85,3 +109,8 @@ jobs:
             echo "bucket_name=$BUCKET" >> "$GITHUB_OUTPUT"
             echo "account_id=$ACCOUNT_ID" >> "$GITHUB_OUTPUT"
             echo "account_name=$ACCOUNT_NAME" >> "$GITHUB_OUTPUT"
+        - name: Create MongoDB Secrets
+          run: |
+            echo "mongodb-password=${{ secrets.mongodb-password }}" >> "$GITHUB_OUTPUT"
+            # echo "mongodb-user=${{ env.mongodb-uri }}" >> "$GITHUB_OUTPUT"
+            echo "mongodb-uri=${{ inputs.mongodb-uri }}" >> "$GITHUB_OUTPUT"
