@@ -1,116 +1,442 @@
-name: Reusable Deployment
+name: Terraform Infrastructure Deploy
 
-on: 
+on:
   workflow_call:
-    secrets:
-      k8s-kubeconfig:
-        required: true
-      mongodb-password:
-        required: true
     inputs:
-      mongodb-uri:
-        required: true
-        type: string
-        description: The MongoDB connection URI
       env:
         required: true
         type: string
-        description: The target environment
-      prod-dir:
+      subdomains:
         required: true
         type: string
-        description: The production directory
-      dev-dir:
-        required: true
+      deploy_common:
+        required: false
         type: string
-        description: The development directory
+        default: 'false'
+
+    secrets:
+      ORG_REPO_READ_PRIVATE_KEY:
+        required: true
+      ORG_REPO_READ_APP_ID:
+        required: true
+    outputs:
+      matrix-json:
+        description: "The generated matrix JSON"
+        value: ${{ jobs.generate-matrix.outputs.matrix-json }}
+      matrix-count:
+        description: "The number of matrix items"
+        value: ${{ jobs.generate-matrix.outputs.matrix-count }}
+      bucket_name:
+        description: "The bucket name"
+        value: ${{ jobs.generate-matrix.outputs.bucket_name }}
+      account_id:
+        description: "The account id"
+        value: ${{ jobs.generate-matrix.outputs.account_id }}
+      account_name:
+        description: "The account name"
+        value: ${{ jobs.generate-matrix.outputs.account_name }}
 
 jobs:
-    reusable-workflow:
-      environment:
-        name: ${{ inputs.env }}
-      name: Generate Matrix
-      runs-on: ubuntu-latest
-      outputs:
-        matrix-json: ${{ steps.build.outputs.matrix-json }}
-        matrix-count: ${{ steps.build.outputs.matrix-count }}
-        account_id: ${{ steps.build.outputs.account_id }}
-        account_name: ${{ steps.build.outputs.account_name }}
-        bucket_name: ${{ steps.build.outputs.bucket_name }}
-      steps:
-        - name: Checkout
-          uses: actions/checkout@v4
-          with:
-            ref: ${{ github.ref_name }}
+  generate-matrix:
+    name: Generate Matrix
+    runs-on: ubuntu-latest
+    outputs:
+      matrix-json: ${{ steps.build.outputs.matrix-json }}
+      matrix-count: ${{ steps.build.outputs.matrix-count }}
+      account_id: ${{ steps.build.outputs.account_id }}
+      account_name: ${{ steps.build.outputs.account_name }}
+      bucket_name: ${{ steps.build.outputs.bucket_name }}
+    steps:
+      - name: Checkout Repo
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref_name }}
 
-        - name: Setup Python
-          uses: actions/setup-python@v5
-          with:
-            python-version: 3.x
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: 3.x
 
-        - name: Generate Matrix
-          id: build
-          run: |
-            case "${{ github.event.inputs.env }}" in
-              dev) 
-                # BUCKET="dev-statefile-terraform" 
-                # ACCOUNT_ID="254390148077"
-                BUCKET="sandbox-statefile-terraform" 
-                ACCOUNT_ID="800643485173"
-                ACCOUNT_NAME="dev-account"
-                ;;
-              qa) 
-                # BUCKET="qa-statefile-terraform" 
-                # ACCOUNT_ID="039871571616"
-                BUCKET="sandbox-statefile-terraform" 
-                ACCOUNT_ID="800643485173"
-                ACCOUNT_NAME="qa-account"
-                ;;
-              sandbox) 
-                BUCKET="sandbox-statefile-terraform" 
-                ACCOUNT_ID="800643485173"
-                ACCOUNT_NAME="sandbox-account"
-                ;;
-              performance) 
-                BUCKET="perf-statefile-terraform" 
-                ACCOUNT_ID="677977426648"
-                ACCOUNT_NAME="performance-account"
-                ;;
-              staging) 
-                BUCKET="stg-statefile-terraform" 
-                ACCOUNT_ID="649128807268"
-                ACCOUNT_NAME="staging-account"
-                ;;
-              staging-green) 
-                BUCKET="stg-green-statefile-terraform" 
-                ACCOUNT_ID="606184927985"
-                ACCOUNT_NAME="staging-green-account"
-                ;;
-              production) 
-                BUCKET="poc-terraform-loc" 
-                ACCOUNT_ID="271547279005"
-                ACCOUNT_NAME="production-account"
-                ;;
-              *) echo "Unknown env"; exit 1 ;;
+      # Take env variable from inputs which has ref from caller inputs
+      - name: Generate Matrix
+        id: build
+        run: |
+          case "${{ inputs.env }}" in
+            dev) 
+              # BUCKET="dev-statefile-terraform" 
+              # ACCOUNT_ID="254390148077"
+              BUCKET="sandbox-statefile-terraform" 
+              ACCOUNT_ID="800643485173"
+              ACCOUNT_NAME="dev-account"
+              ;;
+            qa) 
+              # BUCKET="qa-statefile-terraform" 
+              # ACCOUNT_ID="039871571616"
+              BUCKET="sandbox-statefile-terraform" 
+              ACCOUNT_ID="800643485173"
+              ACCOUNT_NAME="qa-account"
+              ;;
+            sandbox) 
+              BUCKET="sandbox-statefile-terraform" 
+              ACCOUNT_ID="800643485173"
+              ACCOUNT_NAME="sandbox-account"
+              ;;
+            performance) 
+              BUCKET="perf-statefile-terraform" 
+              ACCOUNT_ID="677977426648"
+              ACCOUNT_NAME="performance-account"
+              ;;
+            staging) 
+              BUCKET="stg-statefile-terraform" 
+              ACCOUNT_ID="649128807268"
+              ACCOUNT_NAME="staging-account"
+              ;;
+            staging-green) 
+              BUCKET="stg-green-statefile-terraform" 
+              ACCOUNT_ID="606184927985"
+              ACCOUNT_NAME="staging-green-account"
+              ;;
+            production) 
+              BUCKET="poc-terraform-loc" 
+              ACCOUNT_ID="271547279005"
+              ACCOUNT_NAME="production-account"
+              ;;
+            *) echo "Unknown env"; exit 1 ;;
+          esac
+          
+          SUBDOMAINS='${{ inputs.subdomains }}'
+          TRIMMED=$(echo "$SUBDOMAINS" | tr -d '[:space:]')
+          if [ -z "$TRIMMED" ]; then
+            MATRIX="[]"
+          else
+            echo '${{ inputs.subdomains }}' > subdomains.json
+            MATRIX=$(python3 scripts/build_matrix.py '${{ inputs.subdomains }}' '${{ inputs.env }}')
+          fi
+          echo "$MATRIX"
+          COUNT=$(printf '%s' "$MATRIX" | jq 'length')
+          echo "matrix-json=$MATRIX"  >> "$GITHUB_OUTPUT"
+          echo "matrix-count=$COUNT" >> "$GITHUB_OUTPUT"
+          echo "bucket_name=$BUCKET" >> "$GITHUB_OUTPUT"
+          echo "account_id=$ACCOUNT_ID" >> "$GITHUB_OUTPUT"
+          echo "account_name=$ACCOUNT_NAME" >> "$GITHUB_OUTPUT"
+  
+  terraform-plan:
+    name: Plan ► ${{ matrix.subdomain }} Subdomain @ ${{ inputs.env }} Environment
+    if: ${{ needs.generate-matrix.outputs.matrix-count > 0 }}
+    runs-on: ubuntu-latest
+    needs: generate-matrix
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJson(needs.generate-matrix.outputs.matrix-json) }}
+    steps:
+      - name: Checkout-Code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref_name }}
+
+      - name: Print Deployment Details
+        run: |
+          echo "Deploying ${{ matrix.subdomain }} in ${{ matrix.env }}"
+          echo "Using AWS Account: ${{ needs.generate-matrix.outputs.account_id }}"
+          echo "Path: ${{ matrix.path }}"
+          echo "Using AWS Account: ${{ needs.generate-matrix.outputs.account_name }}"
+
+      - name: Get GitHub Apps Token
+        id: get_token
+        uses: tibdex/github-app-token@v2
+        with:
+          private_key: ${{ secrets.ORG_REPO_READ_PRIVATE_KEY }}
+          app_id: ${{ secrets.ORG_REPO_READ_APP_ID }}
+
+      - name: Enable Terraform Git actions to use Github Apps Token
+        uses: de-vri-es/setup-git-credentials@v2.0.9
+        with:
+          credentials: https://git:${{ steps.get_token.outputs.token }}@github.com
+      
+      - name: Configure AWS Credentials for reading state
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::${{ needs.generate-matrix.outputs.account_id }}:role/github-workflow-role-tf-deployer
+          role-session-name: tf-ami-deployer-pipeline
+          aws-region: us-east-1
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3  
+        with:
+          terraform_version: "v1.12.2"
+
+      - name: Set Terraform Backend Key
+        working-directory: ${{ matrix.path }}
+        run: |
+          terraform init -reconfigure \
+            -backend-config="bucket=${{ needs.generate-matrix.outputs.bucket_name }}" \
+            -backend-config="key=order/${{ matrix.subdomain }}/terraform.tfstate" \
+            -backend-config="region=us-east-1" \
+            -backend-config="encrypt=true" \
+            -backend-config="use_lockfile=true"
+
+      - name: Terraform Plan for ${{ matrix.subdomain }}
+        working-directory: ${{ matrix.path }}
+        run: |
+          terraform plan \
+            -out=plan-${{ matrix.subdomain }}.tfplan \
+            -input=false \
+            -var-file=${{ inputs.env }}/${{ inputs.env }}.tfvars
+
+          terraform show -no-color plan-${{ matrix.subdomain }}.tfplan |
+          awk '
+            /^  # / {
+              line=$0
+              sub(/^  # /,"",line)                        # strip leading "  # "
+              addr=line
+              sub(/ (will be|must be) .*/,"",addr)        # remove trailing " will be ..." / " must be ..."
+              act="other"
+              if (line ~ /will be created/)              act="create";
+              else if (line ~ /will be destroyed/)       act="destroy";
+              else if (line ~ /will be updated in-place/)act="update";
+              else if (line ~ /(must be|will be) replaced/) act="replace";
+
+              # Short address: strip module prefixes like module.foo. or module.bar[0].
+              short=addr
+              gsub(/(^|\.)module\.[^.]+(\[[0-9]+\])?(\.|$)/,".",short)
+              gsub(/\.\./,".",short); sub(/^\./,"",short); sub(/\.$/,"",short)
+
+              printf "%s\t%s\t%s\n", act, addr, short
+            }
+          ' |
+          while IFS=$'\t' read -r act addr short; do
+            case "$act" in
+              create)  echo "### ✅ \`$short\` *(full: \`$addr\`)* will be **created**"   >> "$GITHUB_STEP_SUMMARY" ;;
+              update)  echo "### 🔁 \`$short\` *(full: \`$addr\`)* will be **updated**"   >> "$GITHUB_STEP_SUMMARY" ;;
+              destroy) echo "### ❌ \`$short\` *(full: \`$addr\`)* will be **destroyed**" >> "$GITHUB_STEP_SUMMARY" ;;
+              replace) echo "### ♻️  \`$short\` *(full: \`$addr\`)* will be **replaced**" >> "$GITHUB_STEP_SUMMARY" ;;
+              *)       echo "### ℹ️  \`$short\` *(full: \`$addr\`)* action: $act"         >> "$GITHUB_STEP_SUMMARY" ;;
             esac
-            
-            SUBDOMAINS='${{ github.event.inputs.subdomains }}'
-            TRIMMED=$(echo "$SUBDOMAINS" | tr -d '[:space:]')
-            if [ -z "$TRIMMED" ]; then
-              MATRIX="[]"
-            else
-              echo '${{ github.event.inputs.subdomains }}' > subdomains.json
-              MATRIX=$(python3 scripts/build_matrix.py '${{ github.event.inputs.subdomains }}' '${{ github.event.inputs.env }}')
-            fi
-            echo "$MATRIX"
-            COUNT=$(printf '%s' "$MATRIX" | jq 'length')
-            echo "matrix-json=$MATRIX"  >> "$GITHUB_OUTPUT"
-            echo "matrix-count=$COUNT" >> "$GITHUB_OUTPUT"
-            echo "bucket_name=$BUCKET" >> "$GITHUB_OUTPUT"
-            echo "account_id=$ACCOUNT_ID" >> "$GITHUB_OUTPUT"
-            echo "account_name=$ACCOUNT_NAME" >> "$GITHUB_OUTPUT"
-        - name: Create MongoDB Secrets
-          run: |
-            echo "mongodb-password=${{ secrets.mongodb-password }}" >> "$GITHUB_OUTPUT"
-            # echo "mongodb-user=${{ env.mongodb-uri }}" >> "$GITHUB_OUTPUT"
-            echo "mongodb-uri=${{ inputs.mongodb-uri }}" >> "$GITHUB_OUTPUT"
+          done
+          terraform show -no-color plan-${{ matrix.subdomain }}.tfplan | grep '^Plan:' >> $GITHUB_STEP_SUMMARY
+
+      - name: Upload Plan Output for ${{ matrix.subdomain }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: terraform-plan-${{ matrix.subdomain }}
+          path: ${{ matrix.path }}/plan-${{ matrix.subdomain }}.tfplan
+          if-no-files-found: error
+  
+  terraform-apply:
+    name: Apply ► ${{ matrix.subdomain }} @ ${{ inputs.env }} Environment
+    if: ${{ needs.generate-matrix.outputs.matrix-count > 0 }}
+    runs-on: ubuntu-latest
+    needs: [generate-matrix, terraform-plan]
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJson(needs.generate-matrix.outputs.matrix-json) }}
+    environment: 
+      name: ${{ inputs.env }}
+    concurrency:
+      group: tf-${{ inputs.env }}-${{ needs.generate-matrix.outputs.account_id }}-${{ matrix.subdomain }}
+      cancel-in-progress: false
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref_name }}
+
+      - name: Get GitHub Apps Token 
+        id: get_token
+        uses: tibdex/github-app-token@v2
+        with:
+          private_key: ${{ secrets.ORG_REPO_READ_PRIVATE_KEY }}
+          app_id: ${{ secrets.ORG_REPO_READ_APP_ID }}
+
+      - name: Enable Terraform Git actions to use Github Apps Token
+        uses: de-vri-es/setup-git-credentials@v2.0.9
+        with:
+          credentials: https://git:${{ steps.get_token.outputs.token }}@github.com
+
+      - name: Configure AWS Credentials (apply)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::${{ needs.generate-matrix.outputs.account_id }}:role/github-workflow-role-tf-deployer
+          role-session-name: tf-apply-session
+          aws-region: us-east-1
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: v1.12.2
+
+      - name: Terraform Init (same backend)
+        working-directory: ${{ matrix.path }}
+        run: |
+          terraform init -reconfigure \
+            -backend-config="bucket=${{ needs.generate-matrix.outputs.bucket_name }}" \
+            -backend-config="key=order/${{ matrix.subdomain }}/terraform.tfstate" \
+            -backend-config="region=us-east-1" \
+            -backend-config="encrypt=true" \
+            -backend-config="use_lockfile=true"
+
+      - name: Download plan
+        uses: actions/download-artifact@v4
+        with:
+          name: terraform-plan-${{ matrix.subdomain }}
+          working-directory: ${{ matrix.path }}
+
+      - name: Terraform Apply (${{ matrix.subdomain }})
+        working-directory: ${{ matrix.path }}
+        run: |
+          test -f "plan-${{ matrix.subdomain }}.tfplan" || { echo "Plan file missing"; exit 1; }
+          terraform apply -input=false -no-color plan-${{ matrix.subdomain }}.tfplan
+
+  plan-common:
+    name: Plan ► common @ ${{ inputs.env }} Environment
+    runs-on: ubuntu-latest
+    if: ${{ always() && inputs.deploy_common == 'true' && (needs.terraform-apply.result == 'success' || needs.terraform-apply.result == 'skipped') }}
+    needs: [generate-matrix, terraform-plan, terraform-apply]
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref_name }}
+
+      - name: Get GitHub Apps Token 
+        id: get_token
+        uses: tibdex/github-app-token@v2
+        with:
+          private_key: ${{ secrets.ORG_REPO_READ_PRIVATE_KEY }}
+          app_id: ${{ secrets.ORG_REPO_READ_APP_ID }}
+
+      - name: Enable Terraform Git actions to use Github Apps Token
+        uses: de-vri-es/setup-git-credentials@v2.0.9
+        with:
+          credentials: https://git:${{ steps.get_token.outputs.token }}@github.com
+
+      - name: Configure AWS Credentials (plan)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::${{ needs.generate-matrix.outputs.account_id }}:role/github-workflow-role-tf-deployer
+          role-session-name: tf-plan-session
+          aws-region: us-east-1
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: v1.12.2
+
+      - name: Terraform Init (same backend)
+        working-directory: ./common
+        run: |
+          terraform init -reconfigure \
+            -backend-config="bucket=${{ needs.generate-matrix.outputs.bucket_name }}" \
+            -backend-config="key=order/common/terraform.tfstate" \
+            -backend-config="region=us-east-1" \
+            -backend-config="encrypt=true" \
+            -backend-config="use_lockfile=true"
+
+      - name: Terraform Plan Common
+        working-directory: ./common
+        run: |
+          terraform plan \
+            -out=plan-common.tfplan \
+            -input=false \
+            -var-file=${{ inputs.env }}/${{ inputs.env }}.tfvars
+
+          # Generate a colorized human-readable plan output
+          terraform show -no-color plan-common.tfplan |
+          awk '
+            /^  # / {
+              line=$0
+              sub(/^  # /,"",line)                        # strip leading "  # "
+              addr=line
+              sub(/ (will be|must be) .*/,"",addr)        # remove trailing " will be ..." / " must be ..."
+              act="other"
+              if (line ~ /will be created/)              act="create";
+              else if (line ~ /will be destroyed/)       act="destroy";
+              else if (line ~ /will be updated in-place/)act="update";
+              else if (line ~ /(must be|will be) replaced/) act="replace";
+
+              # Short address: strip module prefixes like module.foo. or module.bar[0].
+              short=addr
+              gsub(/(^|\.)module\.[^.]+(\[[0-9]+\])?(\.|$)/,".",short)
+              gsub(/\.\./,".",short); sub(/^\./,"",short); sub(/\.$/,"",short)
+
+              printf "%s\t%s\t%s\n", act, addr, short
+            }
+          ' |
+          while IFS=$'\t' read -r act addr short; do
+            case "$act" in
+              create)  echo "### ✅ \`$short\` *(full: \`$addr\`)* will be **created**"   >> "$GITHUB_STEP_SUMMARY" ;;
+              update)  echo "### 🔁 \`$short\` *(full: \`$addr\`)* will be **updated**"   >> "$GITHUB_STEP_SUMMARY" ;;
+              destroy) echo "### ❌ \`$short\` *(full: \`$addr\`)* will be **destroyed**" >> "$GITHUB_STEP_SUMMARY" ;;
+              replace) echo "### ♻️  \`$short\` *(full: \`$addr\`)* will be **replaced**" >> "$GITHUB_STEP_SUMMARY" ;;
+              *)       echo "### ℹ️  \`$short\` *(full: \`$addr\`)* action: $act"         >> "$GITHUB_STEP_SUMMARY" ;;
+            esac
+          done
+          terraform show -no-color plan-common.tfplan | grep '^Plan:' >> $GITHUB_STEP_SUMMARY
+      
+      - name: Upload Plan Output for Common
+        uses: actions/upload-artifact@v4
+        with:
+          name: terraform-plan-common
+          path: ./common/plan-common.tfplan
+          if-no-files-found: error
+
+  apply-common:
+    name: Apply ► common @ ${{ inputs.env }} Environment
+    runs-on: ubuntu-latest
+    if: ${{ always() && inputs.deploy_common == 'true' && needs.plan-common.result == 'success' }}
+    needs: [generate-matrix, plan-common]
+    environment: 
+      name: ${{ inputs.env }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref_name }}
+
+      - name: Get GitHub Apps Token 
+        id: get_token
+        uses: tibdex/github-app-token@v2
+        with:
+          private_key: ${{ secrets.ORG_REPO_READ_PRIVATE_KEY }}
+          app_id: ${{ secrets.ORG_REPO_READ_APP_ID }}
+
+      - name: Enable Terraform Git actions to use Github Apps Token
+        uses: de-vri-es/setup-git-credentials@v2.0.9
+        with:
+          credentials: https://git:${{ steps.get_token.outputs.token }}@github.com
+
+      - name: Configure AWS Credentials (apply)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::${{ needs.generate-matrix.outputs.account_id }}:role/github-workflow-role-tf-deployer
+          role-session-name: tf-apply-session
+          aws-region: us-east-1
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: v1.12.2
+
+      - name: Terraform Init (same backend)
+        working-directory: ./common
+        run: |
+          terraform init -reconfigure \
+            -backend-config="bucket=${{ needs.generate-matrix.outputs.bucket_name }}" \
+            -backend-config="key=order/common/terraform.tfstate" \
+            -backend-config="region=us-east-1" \
+            -backend-config="encrypt=true" \
+            -backend-config="use_lockfile=true"
+
+      - name: Download plan
+        uses: actions/download-artifact@v4
+        with:
+          name: terraform-plan-common
+          path: ./common
+
+      - name: Terraform Apply (common)
+        working-directory: ./common
+        run: |
+          test -f "plan-common.tfplan" || { echo "Plan file missing"; exit 1; }
+          terraform apply -input=false -no-color plan-common.tfplan
