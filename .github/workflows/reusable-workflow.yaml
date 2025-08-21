@@ -157,7 +157,8 @@ jobs:
       - name: Configure AWS Credentials for reading state
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: arn:aws:iam::${{ needs.generate-matrix.outputs.account_id }}:role/github-workflow-role-tf-deployer
+          # role-to-assume: arn:aws:iam::${{ needs.generate-matrix.outputs.account_id }}:role/github-workflow-role-tf-deployer
+          role-to-assume: arn:aws:iam::${{ needs.generate-matrix.outputs.account_id }}:role/github-actions-role
           role-session-name: tf-ami-deployer-pipeline
           aws-region: us-east-1
 
@@ -258,7 +259,8 @@ jobs:
       - name: Configure AWS Credentials (apply)
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: arn:aws:iam::${{ needs.generate-matrix.outputs.account_id }}:role/github-workflow-role-tf-deployer
+          # role-to-assume: arn:aws:iam::${{ needs.generate-matrix.outputs.account_id }}:role/github-workflow-role-tf-deployer
+          role-to-assume: arn:aws:iam::${{ needs.generate-matrix.outputs.account_id }}:role/github-actions-role
           role-session-name: tf-apply-session
           aws-region: us-east-1
 
@@ -315,7 +317,8 @@ jobs:
       - name: Configure AWS Credentials (plan)
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: arn:aws:iam::${{ needs.generate-matrix.outputs.account_id }}:role/github-workflow-role-tf-deployer
+          # role-to-assume: arn:aws:iam::${{ needs.generate-matrix.outputs.account_id }}:role/github-workflow-role-tf-deployer
+          role-to-assume: arn:aws:iam::${{ needs.generate-matrix.outputs.account_id }}:role/github-actions-role
           role-session-name: tf-plan-session
           aws-region: us-east-1
 
@@ -410,7 +413,8 @@ jobs:
       - name: Configure AWS Credentials (apply)
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: arn:aws:iam::${{ needs.generate-matrix.outputs.account_id }}:role/github-workflow-role-tf-deployer
+          # role-to-assume: arn:aws:iam::${{ needs.generate-matrix.outputs.account_id }}:role/github-workflow-role-tf-deployer
+          role-to-assume: arn:aws:iam::${{ needs.generate-matrix.outputs.account_id }}:role/github-actions-role
           role-session-name: tf-apply-session
           aws-region: us-east-1
 
