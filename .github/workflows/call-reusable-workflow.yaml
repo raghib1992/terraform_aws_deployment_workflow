@@ -6,7 +6,7 @@ on:
       env:
         description: 'Target environment'
         type: choice
-        default: sandbox
+        default: production
         options:
           - sandbox
           - dev
@@ -32,7 +32,8 @@ permissions:
 
 jobs:
   deploy_infra:
-    uses: Shake-Shack-Engineering/shared-workflows/.github/workflows/infrastructure-deploy.yaml@poc
+    # uses: Shake-Shack-Engineering/shared-workflows/.github/workflows/infrastructure-deploy.yaml@poc
+    uses: ./.github/workflows/reusable-workflow.yaml
     with:
       env: ${{ github.event.inputs.env }}
       subdomains: ${{ github.event.inputs.subdomains }}
