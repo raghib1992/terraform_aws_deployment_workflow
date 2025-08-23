@@ -68,7 +68,7 @@ def main():
         matrix.append({
             "subdomain": sub,
             "env": env,
-            "env_name": f"{env}-approval",
+            # "env_name": f"{env}-approval",
             # "bucket_name": account_info["bucket_name"],
             # "account_id": account_info["account_id"],
             # "account_name": account_info["account_name"],
