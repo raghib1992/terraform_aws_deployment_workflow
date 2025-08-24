@@ -6,7 +6,7 @@ on:
       env:
         description: 'Target environment'
         type: choice
-        default: production
+        default: dev
         options:
           - sandbox
           - dev
@@ -19,6 +19,10 @@ on:
       subdomains:
         description: 'JSON list of subdomains (e.g. ["basket", "order-management"])'
         type: string
+      targetResource:
+        description: 'Terraform Resource to Target'
+        required: false
+        default: 'null'
       deploy_common:
         description: 'Common Resources Deployment'
         required: false
@@ -32,12 +36,12 @@ permissions:
 
 jobs:
   deploy_infra:
-    # uses: Shake-Shack-Engineering/shared-workflows/.github/workflows/infrastructure-deploy.yaml@poc
-    uses: ./.github/workflows/reusable-workflow.yaml
+    uses: Shake-Shack-Engineering/shared-workflows/.github/workflows/infrastructure-deploy.yaml@develop
     with:
       env: ${{ github.event.inputs.env }}
       subdomains: ${{ github.event.inputs.subdomains }}
       deploy_common: ${{ github.event.inputs.deploy_common }}
+      targetResource: ${{ github.event.inputs.targetResource }}
     secrets:
       ORG_REPO_READ_PRIVATE_KEY: ${{ secrets.ORG_REPO_READ_PRIVATE_KEY }}
       ORG_REPO_READ_APP_ID: ${{ secrets.ORG_REPO_READ_APP_ID }}
