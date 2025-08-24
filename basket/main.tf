@@ -15,7 +15,6 @@ module "basket_management_lambda_function" {
   tags = var.tags
 }
 
-
 module "order_save_sqs" {
   source      = "../module/sqs"
   environment = var.environment
