@@ -2,18 +2,23 @@ import sys
 import json
 
 def get_account_info(env):
+    # Map environment to AWS account details
     account_map = {
         "sandbox": {
             "account_id": "800643485173",
             "bucket_name": "sandbox-statefile-terraform",
-            "account_name": "dev-account"
+            "account_name": "sandbox-account"
         },
         "dev": {
+            # "account_id": "254390148077",
+            # "bucket_name": "dev-statefile-terraform",
             "account_id": "800643485173",
             "bucket_name": "sandbox-statefile-terraform",
             "account_name": "dev-account"
         },
         "qa": {
+            # "account_id": "039871571616",
+            # "bucket_name": "qa-statefile-terraform",
             "account_id": "800643485173",
             "bucket_name": "sandbox-statefile-terraform",
             "account_name": "qa-account"
@@ -35,9 +40,11 @@ def get_account_info(env):
         },
         "production": {
             "account_id": "271547279005",
-            "account_name": "production-statefile-terraform"
+            "bucket_name": "production-statefile-terraform",
+            "account_name": "production-account"
         }
     }
+    # Fallback if env not found
     return account_map.get(env, {
         "account_id": "000000000000",
         "account_name": "unknown"
@@ -49,7 +56,10 @@ def main():
         sys.exit(1)
 
     try:
-        subdomains = json.loads(sys.argv[1])
+        if sys.argv[1].strip() == "":
+            subdomains = None
+        else:
+            subdomains = json.loads(sys.argv[1])
     except json.JSONDecodeError:
         print("Invalid JSON input for subdomains.")
         sys.exit(1)
@@ -57,24 +67,28 @@ def main():
     env = sys.argv[2]
     account_info = get_account_info(env)
 
-    # Build the two lists
-    accounts = [{
-        "account_id": account_info["account_id"],
-        "env": env,
-        "env_name": f"{env}-approval"
-    }]
-    subdomain_matrix = []
-    for sub in subdomains:
-        subdomain_matrix.append({
-            "subdomain": sub,
-            "path": f"{sub}"
+    matrix = []
+    # condition to check subdomains is null or list
+    if subdomains is None:
+        matrix.append({
+            "env": env,
+            "subdomain": False,
+            "bucket_name": account_info["bucket_name"],
+            "account_id": account_info["account_id"],
+            "account_name": account_info["account_name"]
         })
+    else:
+        for sub in subdomains:
+            matrix.append({
+                "subdomain": sub,
+                "env": env,
+                "bucket_name": account_info["bucket_name"],
+                "account_id": account_info["account_id"],
+                "account_name": account_info["account_name"],
+                "path": f"{sub}"
+            })
 
-    # Output both as a JSON object
-    print(json.dumps({
-        "accounts": accounts,
-        "subdomains": subdomain_matrix
-    }))
+    print(json.dumps(matrix))  # Output to stdout
 
 if __name__ == "__main__":
     main()

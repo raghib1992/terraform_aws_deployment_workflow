@@ -49,7 +49,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       matrix-json: ${{ steps.build.outputs.matrix-json }}
-      matrix-count: ${{ steps.build.outputs.matrix-count }}
+      run_matrix: ${{ steps.build.outputs.run_matrix }}
       account_id: ${{ steps.build.outputs.account_id }}
       account_name: ${{ steps.build.outputs.account_name }}
       bucket_name: ${{ steps.build.outputs.bucket_name }}
@@ -73,73 +73,34 @@ jobs:
               exit 1
             fi
           done
-          echo "✅ All subdomain folders exist."
+          # echo "✅ All subdomain folders exist."
 
       # Take env variable from inputs which has ref from caller inputs
       - name: Generate Matrix
         id: build
         run: |
+          # Get Repo Name First Word to Use in terraform Backend key
           REPO_FULL="${{ github.event.repository.full_name }}"
           REPO_NAME="${REPO_FULL##*/}"
           FIRST_WORD="${REPO_NAME%%-*}"
           echo "First word from repo name: $FIRST_WORD"
 
-
-          case "${{ inputs.env }}" in
-            dev) 
-              # BUCKET="dev-statefile-terraform" 
-              # ACCOUNT_ID="254390148077"
-              BUCKET="sandbox-statefile-terraform" 
-              ACCOUNT_ID="800643485173"
-              ACCOUNT_NAME="dev-account"
-              ;;
-            qa) 
-              # BUCKET="qa-statefile-terraform" 
-              # ACCOUNT_ID="039871571616"
-              BUCKET="sandbox-statefile-terraform" 
-              ACCOUNT_ID="800643485173"
-              ACCOUNT_NAME="qa-account"
-              ;;
-            sandbox) 
-              BUCKET="sandbox-statefile-terraform" 
-              ACCOUNT_ID="800643485173"
-              ACCOUNT_NAME="sandbox-account"
-              ;;
-            performance) 
-              BUCKET="perf-statefile-terraform" 
-              ACCOUNT_ID="677977426648"
-              ACCOUNT_NAME="performance-account"
-              ;;
-            staging) 
-              BUCKET="stg-statefile-terraform" 
-              ACCOUNT_ID="649128807268"
-              ACCOUNT_NAME="staging-account"
-              ;;
-            staging-green) 
-              BUCKET="stg-green-statefile-terraform" 
-              ACCOUNT_ID="606184927985"
-              ACCOUNT_NAME="staging-green-account"
-              ;;
-            production) 
-              BUCKET="poc-terraform-loc" 
-              ACCOUNT_ID="271547279005"
-              ACCOUNT_NAME="production-account"
-              ;;
-            *) echo "Unknown env"; exit 1 ;;
-          esac
-          
+          # Check the inputs for subdomain to run matrix or not       
           SUBDOMAINS='${{ inputs.subdomains }}'
           TRIMMED=$(echo "$SUBDOMAINS" | tr -d '[:space:]')
           if [ -z "$TRIMMED" ]; then
-            MATRIX="[]"
+            RUN_MATRIX='false'
           else
-            echo '${{ inputs.subdomains }}' > subdomains.json
-            MATRIX=$(python3 scripts/build_matrix.py '${{ inputs.subdomains }}' '${{ inputs.env }}')
+            RUN_MATRIX='true'
           fi
+            
+          MATRIX=$(python3 scripts/build_matrix_2.py '${{ inputs.subdomains }}' '${{ inputs.env }}')
+          BUCKET=$(echo "$MATRIX" | jq -r '.[0].bucket_name')
+          ACCOUNT_ID=$(echo "$MATRIX" | jq -r '.[0].account_id')
+          ACCOUNT_NAME=$(echo "$MATRIX" | jq -r '.[0].account_name')
           echo "$MATRIX"
-          COUNT=$(printf '%s' "$MATRIX" | jq 'length')
+          echo "run_matrix=$RUN_MATRIX" >> "$GITHUB_OUTPUT"
           echo "matrix-json=$MATRIX"  >> "$GITHUB_OUTPUT"
-          echo "matrix-count=$COUNT" >> "$GITHUB_OUTPUT"
           echo "bucket_name=$BUCKET" >> "$GITHUB_OUTPUT"
           echo "account_id=$ACCOUNT_ID" >> "$GITHUB_OUTPUT"
           echo "account_name=$ACCOUNT_NAME" >> "$GITHUB_OUTPUT"
@@ -147,11 +108,9 @@ jobs:
 
   terraform-plan:
     name: Plan ► ${{ matrix.subdomain }} Subdomain @ ${{ inputs.env }} Environment
-    if: ${{ needs.generate-matrix.outputs.matrix-count > 0 }}
+    if: ${{ needs.generate-matrix.outputs.run_matrix == 'true' }}
     runs-on: ubuntu-latest
     needs: generate-matrix
-    outputs:
-      exit_code: ${{ steps.terraform-plan.outputs.exit_code }}
     strategy:
       fail-fast: false
       matrix:
@@ -335,7 +294,7 @@ jobs:
 
   terraform-apply:
     name: Apply ► ${{ matrix.subdomain }} @ ${{ inputs.env }} Environment
-    if: needs.generate-matrix.outputs.matrix-count > 0
+    if: needs.generate-matrix.outputs.run_matrix == 'true'
     runs-on: ubuntu-latest
     outputs:
       has_changes: ${{ steps.plan_check.outputs.has_changes }}
@@ -405,7 +364,7 @@ jobs:
           if echo "$PLAN_OUTPUT" | grep -q 'No changes. Your infrastructure matches the configuration.'; then
             echo "No changes detected in the plan."
             echo "has_changes=false" >> $GITHUB_OUTPUT
-          elif echo "$PLAN_OUTPUT" | grep -q '0 to add, 0 to change, 0 to destroy'; then
+          elif echo "$PLAN_OUTPUT" | grep -q 'Plan: 0 to add, 0 to change, 0 to destroy'; then
             echo "No changes detected in the plan."
             echo "has_changes=false" >> $GITHUB_OUTPUT
           else
@@ -431,6 +390,17 @@ jobs:
         with:
           ref: ${{ github.ref_name }}
 
+      - name: Debug needs context
+        run: |
+          echo "All needs context:"
+          echo "${{ toJson(needs) }}"
+
+      - name: Print Deployment Details
+        run: |
+          echo "Using AWS Account: ${{ needs.generate-matrix.outputs.account_id }}"
+          echo "Using Bucket: ${{ needs.generate-matrix.outputs.bucket_name }}"
+          echo "Using AWS Account: ${{ needs.generate-matrix.outputs.account_name }}"
+
       - name: Get GitHub Apps Token 
         id: get_token
         uses: tibdex/github-app-token@v2
@@ -454,6 +424,7 @@ jobs:
         uses: hashicorp/setup-terraform@v3
         with:
           terraform_version: v1.12.2
+          terraform_wrapper: false
 
       - name: Terraform Init (same backend)
         working-directory: ./common
@@ -466,8 +437,10 @@ jobs:
             -backend-config="use_lockfile=true"
 
       - name: Terraform Plan Common
+        if: ${{ inputs.targetResource == 'null' }}
         working-directory: ./common
         run: |
+          set +e
           terraform plan \
             -out=plan-common.tfplan \
             -input=false \
@@ -587,7 +560,7 @@ jobs:
       - name: Upload Plan Output for Common
         uses: actions/upload-artifact@v4
         with:
-          name: terraform-plan-common
+          name: plan-common
           path: ./common/plan-common.tfplan
           if-no-files-found: error
 
@@ -643,7 +616,7 @@ jobs:
       - name: Download plan
         uses: actions/download-artifact@v4
         with:
-          name: terraform-plan-common
+          name: plan-common
           path: ./common
 
       - name: Check if plan has changes
@@ -655,7 +628,7 @@ jobs:
           if echo "$PLAN_OUTPUT" | grep -q 'No changes. Your infrastructure matches the configuration.'; then
             echo "No changes detected in the plan."
             echo "has_changes=false" >> $GITHUB_OUTPUT
-          elif echo "$PLAN_OUTPUT" | grep -q '0 to add, 0 to change, 0 to destroy'; then
+          elif echo "$PLAN_OUTPUT" | grep -q 'Plan: 0 to add, 0 to change, 0 to destroy'; then
             echo "No changes detected in the plan."
             echo "has_changes=false" >> $GITHUB_OUTPUT
           else
