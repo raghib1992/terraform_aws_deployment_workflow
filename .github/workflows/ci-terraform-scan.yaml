@@ -25,37 +25,37 @@ jobs:
         run: |
           set -euo pipefail
 
-          # Determine the diff range (PR base..head)
+          # Get PR base and head SHAs
           BASE_SHA="${{ github.event.pull_request.base.sha }}"
           HEAD_SHA="${{ github.event.pull_request.head.sha }}"
 
           echo "Base SHA: $BASE_SHA"
           echo "Head SHA: $HEAD_SHA"
 
-          # List changed Terraform files
+          # Get changed Terraform files
           mapfile -t files < <(git diff --name-only "$BASE_SHA" "$HEAD_SHA" -- '**/*.tf' '**/*.tfvars' | sed 's#^./##')
 
           if [ ${#files[@]} -eq 0 ]; then
             echo "No Terraform changes detected."
             echo "has_changes=false" >> "$GITHUB_OUTPUT"
-            echo 'matrix={"folder":[]}' >> "$GITHUB_OUTPUT"
+            echo 'matrix=[]' >> "$GITHUB_OUTPUT"
             exit 0
           fi
 
-          # Get unique directories containing changed files
+          # Get unique directories
           dirs=$(printf '%s\n' "${files[@]}" | xargs -n1 dirname | sort -u)
 
-          # Convert to JSON array using jq
-          json_arr=$(printf '%s\n' "$dirs" | jq -R -s 'split("\n")[:-1]')
-
-          # Build final matrix object: {"folder": ["dir1","dir2", ...]}
-          matrix=$(jq -n --argjson arr "$json_arr" '{folder: $arr}')
-
           echo "Changed folders:"
-          echo "$matrix"
+          echo "$dirs"
+
+          # Build JSON array in format: [{"dir":"folder1"},{"dir":"folder2"}]
+          json_matrix=$(printf '%s\n' "$dirs" | jq -R '{dir: .}' | jq -s -c '.')
+
+          echo "Generated matrix: $json_matrix"
 
           echo "has_changes=true" >> "$GITHUB_OUTPUT"
-          echo "matrix=$matrix" >> "$GITHUB_OUTPUT"
+          printf 'matrix=%s\n' "$json_matrix" >> "$GITHUB_OUTPUT"
+
 
   # terraform-scan:
   #   name: Scan ► ${{ matrix.subdomain }} Subdomain
