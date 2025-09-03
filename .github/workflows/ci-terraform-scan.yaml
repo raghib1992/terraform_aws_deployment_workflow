@@ -19,7 +19,7 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Compute changed folders and build matrix JSON
+      - name: Compute changed folders and build matrix JSON (top-level only)
         id: set-matrix
         shell: bash
         run: |
@@ -38,48 +38,41 @@ jobs:
             exit 0
           fi
 
-          # Unique directories that contain changed files
-          # Then sort by path length ASC so parents come before children
-          dirs=$(printf '%s\n' "${files[@]}" \
-            | xargs -n1 dirname \
-            | sort -u \
-            | awk '{print length, $0}' \
-            | sort -n \
-            | cut -d" " -f2-)
+          # Get unique directories for changed files
+          dirs=$(printf '%s\n' "${files[@]}" | xargs -n1 dirname | sort -u)
 
-          echo "Changed dirs (pre-prune):"
+          echo "Changed dirs (raw):"
           printf '%s\n' "$dirs"
 
-          # Prune nested dirs: keep a dir only if no kept parent is a prefix of it
-          pruned=()
-          while IFS= read -r d; do
+          # Map each dir to its TOP-LEVEL parent:
+          # - "fake-folder/dev"  -> "fake-folder"
+          # - "delivery"         -> "delivery"
+          # - "." (repo root)    -> "."
+          toplevel=$(while IFS= read -r d; do
             [ -z "$d" ] && continue
-            skip=false
-            for p in "${pruned[@]}"; do
-              case "$d/" in
-                "$p/"*) skip=true; break ;;
-              esac
-            done
-            if ! $skip; then
-              pruned+=("$d")
+            if [ "$d" = "." ]; then
+              echo "."
+            else
+              echo "${d%%/*}"
             fi
-          done <<< "$dirs"
+          done <<< "$dirs" | sort -u)
 
-          echo "Dirs after pruning nested paths:"
-          printf '%s\n' "${pruned[@]}"
+          echo "Top-level dirs:"
+          printf '%s\n' "$toplevel"
 
           # Build matrix as: [{"dir":"folder1"},{"dir":"folder2"}]
-          if [ ${#pruned[@]} -eq 0 ]; then
+          if [ -z "$toplevel" ]; then
             echo "has_changes=false" >> "$GITHUB_OUTPUT"
             echo 'matrix=[]' >> "$GITHUB_OUTPUT"
             exit 0
           fi
 
-          json_matrix=$(printf '%s\n' "${pruned[@]}" | jq -R '{dir: .}' | jq -s -c '.')
+          json_matrix=$(printf '%s\n' "$toplevel" | jq -R '{dir: .}' | jq -s -c '.')
           echo "Generated matrix: $json_matrix"
 
           echo "has_changes=true" >> "$GITHUB_OUTPUT"
           printf 'matrix=%s\n' "$json_matrix" >> "$GITHUB_OUTPUT"
+
 
 
 
