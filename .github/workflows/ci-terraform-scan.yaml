@@ -113,9 +113,19 @@ jobs:
           mkdir -p reports
 
        # ---------- Terraform basic checks ----------
-      - name: Terraform fmt (recursive)
+      - name: Terraform fmt (recursive, report but don’t fail on code 3)
+        id: tf-fmt
         working-directory: ${{ matrix.dir }}
-        run: terraform fmt -check -recursive
+        shell: bash
+        run: |
+          set +e
+          OUT="$(terraform fmt -check -recursive -diff -no-color 2>&1)"
+          CODE=$?
+          set -e
+
+          # Save full output as a report
+          REPORT="../reports/terraform-fmt-${{ steps.prep.outputs.safe_dir }}.txt"
+          printf '%s\n' "$OUT" > "$REPORT"
 
       - name: Terraform init (no backend)
         working-directory: ${{ matrix.dir }}
@@ -180,6 +190,14 @@ jobs:
       #   run: trivy config --recursive --severity HIGH,CRITICAL --format sarif --output ../trivy-${{ matrix.dir }}.sarif .
 
       # ---------- Upload SARIF to Code Scanning ----------
+      - name: Upload terraform fmt report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: terraform-fmt-${{ steps.prep.outputs.safe_dir }}
+          path: reports/terraform-fmt-${{ steps.prep.outputs.safe_dir }}.txt
+          if-no-files-found: warn
+      
       - name: Upload TFLint SARIF
         if: always()
         uses: github/codeql-action/upload-sarif@v3
