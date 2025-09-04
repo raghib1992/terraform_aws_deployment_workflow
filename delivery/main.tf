@@ -6,5 +6,5 @@ resource "aws_instance" "name" {
   subnet_id     = "subnet-09e42151aa1caa70c"
   tags = {
     Name = "poc-ec2-instance"
-  }
+    }
 }
