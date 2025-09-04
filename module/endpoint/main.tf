@@ -1,14 +1,14 @@
 
 resource "aws_api_gateway_resource" "api_resource" {
-  parent_id = var.api_gw_root_resource_id
-  path_part = var.parent_path
+  parent_id   = var.api_gw_root_resource_id
+  path_part   = var.parent_path
 
   rest_api_id = var.api_gw_rest_api_id
 }
 
 resource "aws_api_gateway_resource" "child_api_resource" {
-  parent_id = aws_api_gateway_resource.api_resource.id
-  path_part = var.child_path
+  parent_id   = aws_api_gateway_resource.api_resource.id
+  path_part   = var.child_path
 
   rest_api_id = var.api_gw_rest_api_id
 }
@@ -62,7 +62,7 @@ resource "aws_api_gateway_deployment" "api_deployment" {
 
   depends_on = [
     aws_api_gateway_integration.lambda_integration,
-    aws_api_gateway_integration.child_lambda_integration
+     aws_api_gateway_integration.child_lambda_integration
   ]
 }
 
@@ -81,6 +81,6 @@ resource "aws_lambda_permission" "apigw_lambda_permission" {
 }
 
 output "invoke_url" {
-  value       = aws_api_gateway_stage.dev_stage.invoke_url
+  value = aws_api_gateway_stage.dev_stage.invoke_url
   description = "The URL to invoke the API Gateway"
 }
