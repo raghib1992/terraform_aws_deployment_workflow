@@ -113,6 +113,7 @@ jobs:
       - name: Terraform fmt (recursive, report; don’t fail on code 3)
         id: tf-fmt
         working-directory: ${{ matrix.dir }}
+        continue-on-error: true
         shell: bash
         run: |
           set +e
@@ -136,18 +137,38 @@ jobs:
         run: tflint --init
 
       - name: TFLint run (recursive, SARIF; don’t fail on exit 2)
+        id: tflint
         working-directory: ${{ matrix.dir }}
+        continue-on-error: true
         shell: bash
         run: |
           set -o pipefail
-          # SARIF for Code Scanning UI
-          tflint --recursive -f sarif > "reports/tflint.sarif"
+          mkdir -p reports
 
-          # Console logs
+          # Disable -e to handle exit codes manually
           set +e
+
+          # Generate SARIF report
+          tflint --recursive -f sarif > "reports/tflint.sarif"
+          sarif_code=$?
+
+          # Generate compact logs for console visibility
           tflint --recursive -f compact
-          exit_code=$?
+          compact_code=$?
+
           set -e
+
+          # Choose the worst exit code
+          exit_code=$sarif_code
+          if [ "$compact_code" -gt "$exit_code" ]; then
+            exit_code=$compact_code
+          fi
+
+          # Allow 0 (clean) and 2 (warnings). Fail only on unexpected codes.
+          if [ "$exit_code" -ne 0 ] && [ "$exit_code" -ne 2 ]; then
+            exit "$exit_code"
+          fi
+
 
       # ---- Trivy (IaC security & misconfigs) ----
       # Option A: Use the Trivy Action for IaC config scanning
