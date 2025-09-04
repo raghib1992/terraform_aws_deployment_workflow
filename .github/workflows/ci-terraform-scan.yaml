@@ -87,133 +87,179 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Change to Terraform directory
-        run: |
-          pwd 
-          ls -ltra
-          if [ "${{ matrix.dir }}" != "." ]; then
-            cd "${{ matrix.dir }}"
-            ls -ltra
-            git branch
-          fi
-        shell: bash
-
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
 
       - name: Setup TFLint (with plugin cache)
         uses: terraform-linters/setup-tflint@v4 
-  
-      - name: Ensure local reports dir (inside working directory)
-        working-directory: ${{ matrix.dir }}
-        shell: bash
-        run: mkdir -p reports
 
-       # ---------- Terraform basic checks ----------
-      - name: Terraform fmt (recursive, report; don’t fail on code 3)
+      # ---------- Terraform basic checks ----------
+      # --- terraform fmt: capture report, non-fatal ---
+      - name: Terraform fmt (recursive; capture PR report)
         id: tf-fmt
         working-directory: ${{ matrix.dir }}
-        continue-on-error: true
         shell: bash
         run: |
+          set -o pipefail
+          mkdir -p reports
           set +e
           OUT="$(terraform fmt -check -recursive -diff -no-color 2>&1)"
           CODE=$?
           set -e
 
+          # Save to file (optional; helpful to keep locally)
           printf '%s\n' "$OUT" > "reports/terraform-fmt.txt"
 
-      - name: Terraform init (no backend)
-        working-directory: ${{ matrix.dir }}
-        run: terraform init -input=false -backend=false
-
-      - name: Terraform validate
-        working-directory: ${{ matrix.dir }}
-        run: terraform validate -no-color
-
-      # ---------- TFLint (with SARIF) ----------
-      - name: TFLint init (plugins)
-        working-directory: ${{ matrix.dir }}
-        run: tflint --init
-
-      - name: TFLint run (recursive, SARIF; don’t fail on exit 2)
-        id: tflint
-        working-directory: ${{ matrix.dir }}
-        continue-on-error: true
-        shell: bash
-        run: |
-          set -o pipefail
-          mkdir -p reports
-
-          # Disable -e to handle exit codes manually
-          set +e
-
-          # Generate SARIF report
-          tflint --recursive -f sarif > "reports/tflint.sarif"
-          sarif_code=$?
-
-          # Generate compact logs for console visibility
-          tflint --recursive -f compact
-          compact_code=$?
-
-          set -e
-
-          # Choose the worst exit code
-          exit_code=$sarif_code
-          if [ "$compact_code" -gt "$exit_code" ]; then
-            exit_code=$compact_code
+          # Expose results to later steps
+          if [ "$CODE" -eq 3 ]; then
+            echo "needs_formatting=true" >> "$GITHUB_OUTPUT"
+            {
+              echo 'report<<EOF'
+              printf '%s\n' "$OUT"
+              echo 'EOF'
+            } >> "$GITHUB_OUTPUT"
+          else
+            echo "needs_formatting=false" >> "$GITHUB_OUTPUT"
+            echo 'report=' >> "$GITHUB_OUTPUT"
           fi
 
-          # Allow 0 (clean) and 2 (warnings). Fail only on unexpected codes.
-          if [ "$exit_code" -ne 0 ] && [ "$exit_code" -ne 2 ]; then
-            exit "$exit_code"
+          # Only fail on unexpected codes (not 0 or 3)
+          if [ "$CODE" -ne 0 ] && [ "$CODE" -ne 3 ]; then
+            exit "$CODE"
           fi
 
-
-      # ---- Trivy (IaC security & misconfigs) ----
-      # Option A: Use the Trivy Action for IaC config scanning
-      - name: Trivy config scan (IaC) - recursive
-        uses: aquasecurity/trivy-action@master
+      # --- post (or update) a PR comment with the fmt diff ---
+      - name: Comment terraform fmt report on PR
+        if: ${{ github.event_name == 'pull_request' && steps.tf-fmt.outputs.needs_formatting == 'true' }}
+        uses: actions/github-script@v7
+        env:
+          FMT_REPORT: ${{ steps.tf-fmt.outputs.report }}
+          FOLDER: ${{ matrix.dir }}
         with:
-          scan-type: 'config'
-          scan-ref: ${{ matrix.dir }}
-          hide-progress: true
-          format: 'sarif'
-          output: ${{ matrix.dir }}/reports/trivy.sarif
-          severity: 'HIGH,CRITICAL'
-          exit-code: '1'
+          script: |
+            const { owner, repo } = context.repo;
+            const issue_number = context.issue.number;
+            const marker = `<!-- tf-fmt-report:${process.env.FOLDER} -->`;
+            const body = `${marker}
+            ### Terraform fmt report for \`${process.env.FOLDER}\`
+            The following files need formatting. Run \`terraform fmt -recursive\`.
 
-      # Optionally, you can also run from CLI if you prefer:
-      # - name: Install Trivy (CLI)
-      #   run: |
-      #     sudo apt-get update
-      #     sudo apt-get install -y wget apt-transport-https gnupg lsb-release
-      #     wget -qO - https://aquasecurity.github.io/trivy-repo/deb/public.key | sudo apt-key add -
-      #     echo "deb https://aquasecurity.github.io/trivy-repo/deb $(lsb_release -sc) main" | sudo tee /etc/apt/sources.list.d/trivy.list
-      #     sudo apt-get update
-      #     sudo apt-get install -y trivy
-      #
-      # - name: Trivy config scan (IaC) - CLI
+            <details><summary>Show diff</summary>
+
+            \`\`\`diff
+            ${process.env.FMT_REPORT}
+            \`\`\`
+            </details>
+            `;
+
+            // Find existing comment with the same marker (so we update instead of spamming)
+            const { data: comments } = await github.rest.issues.listComments({
+              owner, repo, issue_number, per_page: 100
+            });
+            const existing = comments.find(c => c.body && c.body.includes(marker));
+
+            if (existing) {
+              await github.rest.issues.updateComment({
+                owner, repo, comment_id: existing.id, body
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner, repo, issue_number, body
+              });
+            }
+
+
+      # - name: Terraform init (no backend)
       #   working-directory: ${{ matrix.dir }}
-      #   run: trivy config --recursive --severity HIGH,CRITICAL --format sarif --output ../trivy-${{ matrix.dir }}.sarif .
+      #   run: terraform init -input=false -backend=false
 
-      # ---------- Upload SARIF to Code Scanning ----------
-      - name: Upload terraform fmt report (artifact)
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: terraform-fmt-${{ matrix.dir }}
-          path: ${{ matrix.dir }}/reports/terraform-fmt.txt
-          if-no-files-found: warn
+      # - name: Terraform validate
+      #   working-directory: ${{ matrix.dir }}
+      #   run: terraform validate -no-color
+
+      # # ---------- TFLint (with SARIF) ----------
+      # - name: TFLint init (plugins)
+      #   working-directory: ${{ matrix.dir }}
+      #   run: tflint --init
+
+      # - name: TFLint run (recursive, SARIF; don’t fail on exit 2)
+      #   id: tflint
+      #   working-directory: ${{ matrix.dir }}
+      #   continue-on-error: true
+      #   shell: bash
+      #   run: |
+      #     set -o pipefail
+      #     mkdir -p reports
+
+      #     # Disable -e to handle exit codes manually
+      #     set +e
+
+      #     # Generate SARIF report
+      #     tflint --recursive -f sarif > "reports/tflint.sarif"
+      #     sarif_code=$?
+
+      #     # Generate compact logs for console visibility
+      #     tflint --recursive -f compact
+      #     compact_code=$?
+
+      #     set -e
+
+      #     # Choose the worst exit code
+      #     exit_code=$sarif_code
+      #     if [ "$compact_code" -gt "$exit_code" ]; then
+      #       exit_code=$compact_code
+      #     fi
+
+      #     # Allow 0 (clean) and 2 (warnings). Fail only on unexpected codes.
+      #     if [ "$exit_code" -ne 0 ] && [ "$exit_code" -ne 2 ]; then
+      #       exit "$exit_code"
+      #     fi
+
+
+      # # ---- Trivy (IaC security & misconfigs) ----
+      # # Option A: Use the Trivy Action for IaC config scanning
+      # - name: Trivy config scan (IaC) - recursive
+      #   uses: aquasecurity/trivy-action@master
+      #   with:
+      #     scan-type: 'config'
+      #     scan-ref: ${{ matrix.dir }}
+      #     hide-progress: true
+      #     format: 'sarif'
+      #     output: ${{ matrix.dir }}/reports/trivy.sarif
+      #     severity: 'HIGH,CRITICAL'
+      #     exit-code: '1'
+
+      # # Optionally, you can also run from CLI if you prefer:
+      # # - name: Install Trivy (CLI)
+      # #   run: |
+      # #     sudo apt-get update
+      # #     sudo apt-get install -y wget apt-transport-https gnupg lsb-release
+      # #     wget -qO - https://aquasecurity.github.io/trivy-repo/deb/public.key | sudo apt-key add -
+      # #     echo "deb https://aquasecurity.github.io/trivy-repo/deb $(lsb_release -sc) main" | sudo tee /etc/apt/sources.list.d/trivy.list
+      # #     sudo apt-get update
+      # #     sudo apt-get install -y trivy
+      # #
+      # # - name: Trivy config scan (IaC) - CLI
+      # #   working-directory: ${{ matrix.dir }}
+      # #   run: trivy config --recursive --severity HIGH,CRITICAL --format sarif --output ../trivy-${{ matrix.dir }}.sarif .
+
+      # # ---------- Upload SARIF to Code Scanning ----------
+      # - name: Upload terraform fmt report (artifact)
+      #   if: always()
+      #   uses: actions/upload-artifact@v4
+      #   with:
+      #     name: terraform-fmt-${{ matrix.dir }}
+      #     path: ${{ matrix.dir }}/reports/terraform-fmt.txt
+      #     if-no-files-found: warn
       
-      - name: Upload TFLint SARIF
-        if: always()
-        uses: github/codeql-action/upload-sarif@v3
-        with:
-          sarif_file: ${{ matrix.dir }}/reports/tflint.sarif
+      # - name: Upload TFLint SARIF
+      #   if: always()
+      #   uses: github/codeql-action/upload-sarif@v3
+      #   with:
+      #     sarif_file: ${{ matrix.dir }}/reports/tflint.sarif
 
-      - name: Upload Trivy SARIF
-        if: always()
-        uses: github/codeql-action/upload-sarif@v3
-        with:
-          sarif_file: ${{ matrix.dir }}/reports/trivy.sarif
+      # - name: Upload Trivy SARIF
+      #   if: always()
+      #   uses: github/codeql-action/upload-sarif@v3
+      #   with:
+      #     sarif_file: ${{ matrix.dir }}/reports/trivy.sarif
