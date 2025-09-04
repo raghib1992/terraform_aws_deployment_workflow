@@ -125,10 +125,10 @@ jobs:
         working-directory: ${{ matrix.dir }}
         run: terraform validate -no-color
 
-      # ---- TFLint (best practices & common mistakes) ---- 
-      - name: TFLint init (download plugins)
+      # ---------- TFLint (with SARIF) ----------
+      - name: TFLint init (plugins)
         working-directory: ${{ matrix.dir }}
-        run: tflint --init -input=false -backend=false
+        run: tflint --init
 
       - name: TFLint run (recursive, SARIF)
         working-directory: ${{ matrix.dir }}
@@ -190,4 +190,5 @@ jobs:
         if: always()
         uses: github/codeql-action/upload-sarif@v3
         with:
+
           sarif_file: reports/trivy-${{ steps.prep.outputs.safe_dir }}.sarif
