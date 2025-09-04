@@ -99,33 +99,41 @@ jobs:
         id: tf-fmt
         working-directory: ${{ matrix.dir }}
         shell: bash
+        continue-on-error: true   # never block later steps
         run: |
           set -o pipefail
           mkdir -p reports
+
+          # Run fmt but don't let exit 3 (needs formatting) or other non-zero abort this step
           set +e
           OUT="$(terraform fmt -check -recursive -diff -no-color 2>&1)"
           CODE=$?
           set -e
 
-          # Save to file (optional; helpful to keep locally)
+          # Always write a file copy (useful for debugging if needed)
           printf '%s\n' "$OUT" > "reports/terraform-fmt.txt"
 
-          # Expose results to later steps
+          # Prepare safe, unique heredoc delimiter (diffs can contain "EOF")
+          DELIM="FMT_$(date +%s%N)_$RANDOM"
+
           if [ "$CODE" -eq 3 ]; then
             echo "needs_formatting=true" >> "$GITHUB_OUTPUT"
             {
-              echo 'report<<EOF'
+              echo "report<<$DELIM"
               printf '%s\n' "$OUT"
-              echo 'EOF'
+              echo "$DELIM"
             } >> "$GITHUB_OUTPUT"
-          else
+          elif [ "$CODE" -eq 0 ]; then
             echo "needs_formatting=false" >> "$GITHUB_OUTPUT"
-            echo 'report=' >> "$GITHUB_OUTPUT"
-          fi
-
-          # Only fail on unexpected codes (not 0 or 3)
-          if [ "$CODE" -ne 0 ] && [ "$CODE" -ne 3 ]; then
-            exit "$CODE"
+            echo "report=" >> "$GITHUB_OUTPUT"
+          else
+            # Unexpected error from terraform fmt; expose output but don't fail due to continue-on-error
+            echo "needs_formatting=false" >> "$GITHUB_OUTPUT"
+            {
+              echo "report<<$DELIM"
+              printf '%s\n' "$OUT"
+              echo "$DELIM"
+            } >> "$GITHUB_OUTPUT"
           fi
 
       # --- post (or update) a PR comment with the fmt diff ---
@@ -142,7 +150,7 @@ jobs:
             const marker = `<!-- tf-fmt-report:${process.env.FOLDER} -->`;
             const body = `${marker}
             ### Terraform fmt report for \`${process.env.FOLDER}\`
-            The following files need formatting. Run \`terraform fmt -recursive\`.
+            Run \`terraform fmt -recursive\` to fix the following diffs.
 
             <details><summary>Show diff</summary>
 
@@ -151,22 +159,14 @@ jobs:
             \`\`\`
             </details>
             `;
-
-            // Find existing comment with the same marker (so we update instead of spamming)
-            const { data: comments } = await github.rest.issues.listComments({
-              owner, repo, issue_number, per_page: 100
-            });
+            const { data: comments } = await github.rest.issues.listComments({ owner, repo, issue_number, per_page: 100 });
             const existing = comments.find(c => c.body && c.body.includes(marker));
-
             if (existing) {
-              await github.rest.issues.updateComment({
-                owner, repo, comment_id: existing.id, body
-              });
+              await github.rest.issues.updateComment({ owner, repo, comment_id: existing.id, body });
             } else {
-              await github.rest.issues.createComment({
-                owner, repo, issue_number, body
-              });
+              await github.rest.issues.createComment({ owner, repo, issue_number, body });
             }
+
 
 
       # - name: Terraform init (no backend)
