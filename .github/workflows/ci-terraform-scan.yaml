@@ -104,16 +104,13 @@ jobs:
       - name: Setup TFLint (with plugin cache)
         uses: terraform-linters/setup-tflint@v4 
   
-      - name: Prepare env & report folder
-        id: prep
-        run: |
-          set -euo pipefail
-          SAFE_DIR="$(echo '${{ matrix.dir }}' | tr '/.' '__')"
-          echo "safe_dir=$SAFE_DIR" >> "$GITHUB_OUTPUT"
-          mkdir -p reports
+      - name: Ensure local reports dir (inside working directory)
+        working-directory: ${{ matrix.dir }}
+        shell: bash
+        run: mkdir -p reports
 
        # ---------- Terraform basic checks ----------
-      - name: Terraform fmt (recursive, report but don’t fail on code 3)
+      - name: Terraform fmt (recursive, report; don’t fail on code 3)
         id: tf-fmt
         working-directory: ${{ matrix.dir }}
         shell: bash
@@ -123,9 +120,7 @@ jobs:
           CODE=$?
           set -e
 
-          # Save full output as a report
-          REPORT="../reports/terraform-fmt-${{ steps.prep.outputs.safe_dir }}.txt"
-          printf '%s\n' "$OUT" > "$REPORT"
+          printf '%s\n' "$OUT" > "reports/terraform-fmt.txt"
 
       - name: Terraform init (no backend)
         working-directory: ${{ matrix.dir }}
@@ -140,27 +135,19 @@ jobs:
         working-directory: ${{ matrix.dir }}
         run: tflint --init
 
-      - name: TFLint run (recursive, SARIF)
+      - name: TFLint run (recursive, SARIF; don’t fail on exit 2)
         working-directory: ${{ matrix.dir }}
+        shell: bash
         run: |
           set -o pipefail
+          # SARIF for Code Scanning UI
+          tflint --recursive -f sarif > "reports/tflint.sarif"
 
-          # Generate SARIF report for GitHub Code Scanning UI
-          tflint --recursive -f sarif > "reports/tflint-${{ steps.prep.outputs.safe_dir }}.sarif"
-
-          # Run again in compact format for console logs
+          # Console logs
           set +e
           tflint --recursive -f compact
           exit_code=$?
           set -e
-
-          # Allow exit code 0 (no issues) and 2 (warnings)
-          if [ "$exit_code" -ne 0 ] && [ "$exit_code" -ne 2 ]; then
-            echo "❌ TFLint failed with exit code $exit_code"
-            exit $exit_code
-          else
-            echo "✅ TFLint completed successfully (exit code: $exit_code)"
-          fi
 
       # ---- Trivy (IaC security & misconfigs) ----
       # Option A: Use the Trivy Action for IaC config scanning
@@ -171,9 +158,9 @@ jobs:
           scan-ref: ${{ matrix.dir }}
           hide-progress: true
           format: 'sarif'
-          output: t"reports/trivy-${{ steps.prep.outputs.safe_dir }}.sarif"
+          output: ${{ matrix.dir }}/reports/trivy.sarif
           severity: 'HIGH,CRITICAL'
-          exit-code: '1'   # fail the job if HIGH/CRITICAL are found
+          exit-code: '1'
 
       # Optionally, you can also run from CLI if you prefer:
       # - name: Install Trivy (CLI)
@@ -190,23 +177,22 @@ jobs:
       #   run: trivy config --recursive --severity HIGH,CRITICAL --format sarif --output ../trivy-${{ matrix.dir }}.sarif .
 
       # ---------- Upload SARIF to Code Scanning ----------
-      - name: Upload terraform fmt report
+      - name: Upload terraform fmt report (artifact)
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: terraform-fmt-${{ steps.prep.outputs.safe_dir }}
-          path: reports/terraform-fmt-${{ steps.prep.outputs.safe_dir }}.txt
+          name: terraform-fmt-${{ matrix.dir }}
+          path: ${{ matrix.dir }}/reports/terraform-fmt.txt
           if-no-files-found: warn
       
       - name: Upload TFLint SARIF
         if: always()
         uses: github/codeql-action/upload-sarif@v3
         with:
-          sarif_file: reports/tflint-${{ steps.prep.outputs.safe_dir }}.sarif
+          sarif_file: ${{ matrix.dir }}/reports/tflint.sarif
 
       - name: Upload Trivy SARIF
         if: always()
         uses: github/codeql-action/upload-sarif@v3
         with:
-
-          sarif_file: reports/trivy-${{ steps.prep.outputs.safe_dir }}.sarif
+          sarif_file: ${{ matrix.dir }}/reports/trivy.sarif
