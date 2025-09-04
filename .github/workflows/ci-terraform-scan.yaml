@@ -104,3 +104,47 @@ jobs:
       - name: Setup TFLint (with plugin cache)
         uses: terraform-linters/setup-tflint@v4 
   
+      
+      # ---- TFLint (best practices & common mistakes) ----
+      - name: TFLint init (download plugins)
+        working-directory: ${{ matrix.dir }}
+        run: tflint --init
+
+      - name: TFLint run (recursive)
+        working-directory: ${{ matrix.dir }}
+        # Use --recursive to scan subfolders too; fail on issues (default non-zero exit when issues found)
+        run: tflint --recursive -f compact
+
+      # ---- Trivy (IaC security & misconfigs) ----
+      # Option A: Use the Trivy Action for IaC config scanning
+      - name: Trivy config scan (IaC) - recursive
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: 'config'
+          scan-ref: ${{ matrix.dir }}
+          hide-progress: true
+          format: 'sarif'
+          output: trivy-${{ matrix.dir }}.sarif
+          severity: 'HIGH,CRITICAL'
+          exit-code: '1'   # fail the job if HIGH/CRITICAL are found
+
+      # Optionally, you can also run from CLI if you prefer:
+      # - name: Install Trivy (CLI)
+      #   run: |
+      #     sudo apt-get update
+      #     sudo apt-get install -y wget apt-transport-https gnupg lsb-release
+      #     wget -qO - https://aquasecurity.github.io/trivy-repo/deb/public.key | sudo apt-key add -
+      #     echo "deb https://aquasecurity.github.io/trivy-repo/deb $(lsb_release -sc) main" | sudo tee /etc/apt/sources.list.d/trivy.list
+      #     sudo apt-get update
+      #     sudo apt-get install -y trivy
+      #
+      # - name: Trivy config scan (IaC) - CLI
+      #   working-directory: ${{ matrix.dir }}
+      #   run: trivy config --recursive --severity HIGH,CRITICAL --format sarif --output ../trivy-${{ matrix.dir }}.sarif .
+
+      # ---- Upload SARIF (GitHub code scanning UI) ----
+      - name: Upload Trivy SARIF
+        if: always() # upload even if Trivy failed, so you can see findings
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: trivy-${{ matrix.dir }}.sarif
