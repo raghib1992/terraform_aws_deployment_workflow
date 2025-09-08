@@ -1,0 +1,138 @@
+name: Terraform CI (PR)
+
+on:
+  pull_request:
+    paths:
+      - '**/*.tf'
+      - .github/workflows/terraform-ci.yml
+
+permissions:
+  contents: read
+  pull-requests: write
+  security-events: write
+
+jobs:
+  tf-ci:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.9.5
+
+      - name: Set up TFLint
+        uses: terraform-linters/setup-tflint@v4
+
+      - name: Set up Trivy
+        uses: aquasecurity/setup-trivy@v0.2.3
+
+      - name: Install jq
+        run: sudo apt-get update && sudo apt-get -y install jq
+
+      - name: Prepare reports dir
+        run: mkdir -p reports
+
+      # ---------- terraform fmt ----------
+      - name: Terraform fmt (check; recursive)
+        id: fmt
+        continue-on-error: true
+        run: |
+          # List how many files need formatting
+          files=$(terraform fmt -check -recursive -list=true 2>/dev/null | wc -l | tr -d ' ')
+          # Save detailed diff to a file (handy for debugging)
+          terraform fmt -check -recursive -diff > reports/terraform-fmt.txt 2>&1
+          echo "status=$?" >> $GITHUB_OUTPUT
+          echo "files=$files" >> $GITHUB_OUTPUT
+
+      # ---------- terraform validate ----------
+      - name: Terraform validate (json)
+        id: validate
+        continue-on-error: true
+        run: |
+          terraform init -backend=false -input=false -no-color > /dev/null
+          terraform validate -no-color -json > reports/terraform-validate.json
+          echo "status=$?" >> $GITHUB_OUTPUT
+          errs=$(jq '[.diagnostics[] | select(.severity=="error")] | length' reports/terraform-validate.json)
+          echo "errors=$errs" >> $GITHUB_OUTPUT
+
+      # ---------- TFLint ----------
+      - name: TFLint (json + SARIF)
+        id: tflint
+        continue-on-error: true
+        run: |
+          tflint --init
+          tflint --recursive -f json > reports/tflint.json
+          exit_code=$?
+          # Optional: also generate SARIF for the Code Scanning UI
+          tflint --recursive -f sarif > reports/tflint.sarif || true
+          issues=$(jq '.issues | length' reports/tflint.json 2>/dev/null || echo 0)
+          echo "status=$exit_code" >> $GITHUB_OUTPUT
+          echo "issues=$issues" >> $GITHUB_OUTPUT
+
+      # ---------- Trivy (IaC) ----------
+      - name: Trivy IaC (misconfig + secrets)
+        id: trivy
+        continue-on-error: true
+        run: |
+          trivy --quiet config --format json --output reports/trivy.json --scanners misconfig,secret --ignore-unfixed .
+          exit_code=$?
+          # Optional: SARIF for Code Scanning UI
+          trivy --quiet config --format sarif --output reports/trivy.sarif --scanners misconfig,secret --ignore-unfixed .
+          crit=$(jq '[.. | objects | select(has("Severity")) | select(.Severity=="CRITICAL")] | length' reports/trivy.json 2>/dev/null || echo 0)
+          high=$(jq '[.. | objects | select(has("Severity")) | select(.Severity=="HIGH")] | length' reports/trivy.json 2>/dev/null || echo 0)
+          echo "status=$exit_code" >> $GITHUB_OUTPUT
+          echo "critical=$crit" >> $GITHUB_OUTPUT
+          echo "high=$high" >> $GITHUB_OUTPUT
+
+      # ---------- Optional: upload SARIF to show inline in the Security tab / PR checks ----------
+      - name: Upload SARIF
+        if: always()
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: |
+            reports/tflint.sarif
+            reports/trivy.sarif
+
+      # ---------- Build the PR comment body ----------
+      - name: Build PR comment
+        id: comment
+        if: always()
+        shell: bash
+        run: |
+          fmt_s='❌'; [ "${{ steps.fmt.outputs.status }}" = "0" ] && fmt_s='✅'
+          # fmt returns 3 when formatting is needed; treat that as ❌ too.
+
+          val_s='❌'; [ "${{ steps.validate.outputs.status }}" = "0" ] && val_s='✅'
+          tfl_s='❌'; [ "${{ steps.tflint.outputs.status }}" = "0" ] && tfl_s='✅'
+
+          tri_s='✅'
+          if [ "${{ steps.trivy.outputs.status }}" != "0" ] || [ "${{ steps.trivy.outputs.critical }}" != "0" ] || [ "${{ steps.trivy.outputs.high }}" != "0" ]; then
+            tri_s='❌'
+          fi
+
+          {
+            echo "### Terraform CI status"
+            echo
+            echo "| Check | Status | Details |"
+            echo "|------|--------|---------|"
+            echo "| \`terraform fmt\` | $fmt_s | ${{ steps.fmt.outputs.files || 0 }} file(s) need fmt |"
+            echo "| \`terraform validate\` | $val_s | ${{ steps.validate.outputs.errors || 0 }} error(s) |"
+            echo "| \`tflint\` | $tfl_s | ${{ steps.tflint.outputs.issues || 0 }} issue(s) |"
+            echo "| \`trivy (IaC)\` | $tri_s | CRIT: ${{ steps.trivy.outputs.critical || 0 }}, HIGH: ${{ steps.trivy.outputs.high || 0 }} |"
+            echo
+            echo "_This comment updates on every push. Detailed logs are in the workflow run artifacts._"
+          } > reports/pr-comment.md
+          echo "body<<'EOF'" >> $GITHUB_OUTPUT
+          cat reports/pr-comment.md >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+      # ---------- Post/Update one sticky PR comment ----------
+      - name: Post/Update PR comment
+        if: always() && github.event_name == 'pull_request'
+        uses: marocchino/sticky-pull-request-comment@v2
+        with:
+          header: terraform-ci
+          path: reports/pr-comment.md
