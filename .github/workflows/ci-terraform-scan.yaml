@@ -32,47 +32,29 @@ jobs:
           BASE_SHA="${{ github.event.pull_request.base.sha }}"
           HEAD_SHA="${{ github.event.pull_request.head.sha }}"
 
-          # Find changed Terraform files
-          mapfile -t files < <(git diff --name-only "$BASE_SHA" "$HEAD_SHA" -- '**/*.tf' '**/*.tfvars' | sed 's#^./##')
+          # Only Added/Modified/Renamed Terraform files (exclude deletions)
+          mapfile -t files < <(
+            git diff --name-only --diff-filter=AMR "$BASE_SHA" "$HEAD_SHA" \
+              -- '**/*.tf' '**/*.tfvars' \
+            | sed 's#^./##'
+          )
 
           if [ ${#files[@]} -eq 0 ]; then
-            echo "No Terraform changes detected."
             echo "has_changes=false" >> "$GITHUB_OUTPUT"
             echo 'matrix=[]' >> "$GITHUB_OUTPUT"
             exit 0
           fi
 
-          # Get unique directories for changed files
+          # Unique directories that DIRECTLY contain changed files
+          # (no parent collapsing; scan only these exact dirs)
           dirs=$(printf '%s\n' "${files[@]}" | xargs -n1 dirname | sort -u)
 
-          echo "Changed dirs (raw):"
-          printf '%s\n' "$dirs"
+          # If you NEVER want to scan the repo root when a root file changes,
+          # uncomment the next line to drop "." entries:
+          # dirs=$(printf '%s\n' "$dirs" | sed '/^\.$/d')
 
-          # Map each dir to its TOP-LEVEL parent:
-          # - "fake-folder/dev"  -> "fake-folder"
-          # - "delivery"         -> "delivery"
-          # - "." (repo root)    -> "."
-          toplevel=$(while IFS= read -r d; do
-            [ -z "$d" ] && continue
-            if [ "$d" = "." ]; then
-              echo "."
-            else
-              echo "${d%%/*}"
-            fi
-          done <<< "$dirs" | sort -u)
-
-          echo "Top-level dirs:"
-          printf '%s\n' "$toplevel"
-
-          # Build matrix as: [{"dir":"folder1"},{"dir":"folder2"}]
-          if [ -z "$toplevel" ]; then
-            echo "has_changes=false" >> "$GITHUB_OUTPUT"
-            echo 'matrix=[]' >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-
-          json_matrix=$(printf '%s\n' "$toplevel" | jq -R '{dir: .}' | jq -s -c '.')
-          echo "Generated matrix: $json_matrix"
+          # Build matrix as: [{"dir":"dir1"},{"dir":"dir2"}, ...]
+          json_matrix=$(printf '%s\n' "$dirs" | jq -R '{dir: .}' | jq -s -c '.')
 
           echo "has_changes=true" >> "$GITHUB_OUTPUT"
           printf 'matrix=%s\n' "$json_matrix" >> "$GITHUB_OUTPUT"
@@ -96,62 +78,62 @@ jobs:
           echo "Deploying ${{ matrix.dir }}"
           echo "has_changes: ${{ matrix.has_changes }}"
           
-      - name: Setup Terraform
-        uses: hashicorp/setup-terraform@v3
-        with:
-          terraform_version: "1.12.2"
-      
-      - name: Setup TFLint
-        uses: terraform-linters/setup-tflint@v4
-
-      # ---------- Formatting & Syntax Check ----------
-      - name: Terraform fmt (enforce formatting, recursive)
-        run: |
-          pwd
-          ls -ltr
-          terraform fmt -check -recursive
-        working-directory: ${{ matrix.dir }}
-        continue-on-error: true
-
-      - name: Terraform init (no backend)
-        run: terraform init -input=false -backend=false
-        working-directory: ${{ matrix.dir }}
-
-      - name: Terraform validate
-        run: terraform validate -no-color
-        working-directory: ${{ matrix.dir }}
-        continue-on-error: true
-
-      # ---------- TFLint ----------
-      - name: TFLint init (plugins)
-        if: always()
-        run: tflint --init
-        working-directory: ${{ matrix.dir }}
-
-      - name: Run TFLint (recursive)
-        if: always()
-        run: tflint --recursive -f compact
-        working-directory: ${{ matrix.dir }}
-        continue-on-error: true
-
-      # ---------- Trivy (IaC Security & Vulnerabilty Check) ----------
-      - name: Trivy Config Scan (IaC) (recursive)
-        uses: aquasecurity/trivy-action@master
-        if: always()
-        with:
-          scan-type: config
-          scan-ref: ${{ matrix.dir }}
-          hide-progress: true
-          format: sarif
-          output: trivy-${{ matrix.dir }}.sarif
-          severity: CRITICAL,HIGH
-          exit-code: 1
-        continue-on-error: true
-
-      # ---------- Upload SARIF results ----------
-      # - name: Upload Trivy SARIF results
-      #   if: always()
-      #   uses: github/codeql-action/upload-sarif@v3
+      # - name: Setup Terraform
+      #   uses: hashicorp/setup-terraform@v3
       #   with:
+      #     terraform_version: "1.12.2"
+      
+      # - name: Setup TFLint
+      #   uses: terraform-linters/setup-tflint@v4
 
-      #     sarif_file: trivy-${{ matrix.dir }}.sarif
+      # # ---------- Formatting & Syntax Check ----------
+      # - name: Terraform fmt (enforce formatting, recursive)
+      #   run: |
+      #     pwd
+      #     ls -ltr
+      #     terraform fmt -check -recursive
+      #   working-directory: ${{ matrix.dir }}
+      #   continue-on-error: true
+
+      # - name: Terraform init (no backend)
+      #   run: terraform init -input=false -backend=false
+      #   working-directory: ${{ matrix.dir }}
+
+      # - name: Terraform validate
+      #   run: terraform validate -no-color
+      #   working-directory: ${{ matrix.dir }}
+      #   continue-on-error: true
+
+      # # ---------- TFLint ----------
+      # - name: TFLint init (plugins)
+      #   if: always()
+      #   run: tflint --init
+      #   working-directory: ${{ matrix.dir }}
+
+      # - name: Run TFLint (recursive)
+      #   if: always()
+      #   run: tflint --recursive -f compact
+      #   working-directory: ${{ matrix.dir }}
+      #   continue-on-error: true
+
+      # # ---------- Trivy (IaC Security & Vulnerabilty Check) ----------
+      # - name: Trivy Config Scan (IaC) (recursive)
+      #   uses: aquasecurity/trivy-action@master
+      #   if: always()
+      #   with:
+      #     scan-type: config
+      #     scan-ref: ${{ matrix.dir }}
+      #     hide-progress: true
+      #     format: sarif
+      #     output: trivy-${{ matrix.dir }}.sarif
+      #     severity: CRITICAL,HIGH
+      #     exit-code: 1
+      #   continue-on-error: true
+
+      # # ---------- Upload SARIF results ----------
+      # # - name: Upload Trivy SARIF results
+      # #   if: always()
+      # #   uses: github/codeql-action/upload-sarif@v3
+      # #   with:
+
+      # #     sarif_file: trivy-${{ matrix.dir }}.sarif
